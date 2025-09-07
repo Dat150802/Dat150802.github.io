@@ -11,7 +11,8 @@
     .card{border:1px solid rgb(229,231,235);border-radius:1rem;background:rgba(255,255,255,0.95);backdrop-filter:saturate(1.1) blur(4px);box-shadow:0 8px 24px rgba(0,0,0,.06);}
     .badge{display:inline-flex;align-items:center;gap:.35rem;padding:.25rem .5rem;border-radius:.75rem;font-size:.75rem;font-weight:600;background:#fbbf24;color:#1f2937;}
     .pill{display:inline-flex;align-items:center;gap:.35rem;padding:.35rem .6rem;border-radius:9999px;font-size:.75rem;background:#ecfccb;color:#166534;}
-    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;height:2.75rem;padding:0 1rem;border-radius:.75rem;border:1px solid rgb(229,231,235);}
+    .btn{display:inline-flex;align-items:center;justify-content:center;gap:.5rem;height:2.75rem;padding:0 1rem;border-radius:.75rem;border:1px 
+    solid rgb(229,231,235);}
     .btn-primary{background:#10b981;color:white;border-color:#10b981;}
     .btn-secondary{background:#f3f4f6;}
     .btn-outline{background:white;}
@@ -151,6 +152,11 @@
     <div class="text-center text-xs text-gray-500 pb-6">© 2025 KLC Bến Lức. All rights reserved.</div>
   </footer>
 
-  <script src="/assets/app.js"></script>
+  <script src="/assets/app.js"></script><script>
+  window.addEventListener('DOMContentLoaded', () => {
+    if (window.lucide) lucide.createIcons();
+  });
+</script>
+
 </body>
 </html>
