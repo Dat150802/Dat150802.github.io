@@ -1,0 +1,324 @@
+<!doctype html>
+<html lang="vi">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>KLC – Nội bộ Bến Lức (Demo Dashboard)</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root { --brand: #0E9F6E; --ink: #0F172A; }
+    .card { background: white; border: 1px solid #e5e7eb; border-radius: 1rem; padding: 1rem; box-shadow: 0 10px 20px rgba(0,0,0,.04); }
+    .btn { background: var(--brand); color: white; padding: .6rem 1rem; border-radius: .8rem; }
+    .tab-active { background: rgba(14,159,110,.1); color: var(--brand); }
+  </style>
+</head>
+<body class="bg-slate-50 text-slate-900">
+  <div id="app" class="max-w-7xl mx-auto px-4 py-6">
+    <header class="flex items-center justify-between mb-6">
+      <div class="text-xl font-bold">KLC Nội bộ – Bến Lức</div>
+      <div class="flex items-center gap-2">
+        <input id="pin" type="password" placeholder="Nhập PIN" class="p-2 border rounded-lg" />
+        <button id="btnLogin" class="btn">Đăng nhập</button>
+        <button id="btnLogout" class="px-3 py-2 rounded-lg border">Đăng xuất</button>
+      </div>
+    </header>
+    <nav class="flex gap-2 mb-6">
+      <button class="px-3 py-2 rounded-lg border" data-tab="overview">Tổng quan</button>
+      <button class="px-3 py-2 rounded-lg border" data-tab="orders">Đơn hàng</button>
+      <button class="px-3 py-2 rounded-lg border" data-tab="cskh">CSKH</button>
+      <button class="px-3 py-2 rounded-lg border" data-tab="inventory">Tồn kho</button>
+      <button class="px-3 py-2 rounded-lg border" data-tab="warranty">Bảo hành</button>
+      <button class="px-3 py-2 rounded-lg border" data-tab="settings">Cài đặt</button>
+    </nav>
+    <section id="tab-overview" class="space-y-4">
+      <div class="grid md:grid-cols-3 gap-4">
+        <div class="card"><div class="text-sm text-slate-500">Doanh thu hôm nay</div><div id="kpi-today" class="text-2xl font-bold">—</div></div>
+        <div class="card"><div class="text-sm text-slate-500">Số đơn / ngày</div><div id="kpi-orders" class="text-2xl font-bold">—</div></div>
+        <div class="card"><div class="text-sm text-slate-500">Cảnh báo tồn thấp</div><div id="kpi-lowstock" class="text-2xl font-bold">—</div></div>
+      </div>
+      <div class="card"><canvas id="chartRevenue" height="100"></canvas></div>
+    </section>
+    <section id="tab-orders" class="hidden space-y-4">
+      <div class="card">
+        <h3 class="font-semibold mb-2">Tạo đơn</h3>
+        <form id="form-order" class="grid md:grid-cols-2 gap-3">
+          <input name="customer" placeholder="Khách hàng" class="p-3 border rounded-lg" required />
+          <input name="phone" placeholder="SĐT" class="p-3 border rounded-lg" required />
+          <input name="sku" placeholder="SKU (VD: KY15)" class="p-3 border rounded-lg" required />
+          <input name="price" type="number" placeholder="Giá bán" class="p-3 border rounded-lg" required />
+          <input name="discount" type="number" placeholder="Chiết khấu" class="p-3 border rounded-lg" />
+          <input name="channel" placeholder="Kênh (FB/Zalo/Walk-in...)" class="p-3 border rounded-lg" />
+          <button class="btn md:col-span-2">Lưu đơn</button>
+        </form>
+        <p id="order-msg" class="text-sm text-slate-600 mt-2"></p>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2"><h3 class="font-semibold">Danh sách đơn gần đây</h3><button id="btnReloadOrders" class="px-3 py-2 rounded-lg border">Tải lại</button></div>
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="text-left"><th class="p-2">Ngày</th><th class="p-2">Khách</th><th class="p-2">SKU</th><th class="p-2">Giá</th><th class="p-2">Kênh</th></tr></thead>
+            <tbody id="orders-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section id="tab-cskh" class="hidden space-y-4">
+      <div class="card">
+        <h3 class="font-semibold mb-2">Ghi CSKH</h3>
+        <form id="form-cskh" class="grid md:grid-cols-2 gap-3">
+          <input name="customer" placeholder="Khách hàng" class="p-3 border rounded-lg" required />
+          <input name="phone" placeholder="SĐT" class="p-3 border rounded-lg" required />
+          <input name="status" placeholder="Trạng thái (gọi/nhắn/đặt lịch...)" class="p-3 border rounded-lg" />
+          <input name="next" placeholder="Hẹn lại (yyyy-mm-dd)" class="p-3 border rounded-lg" />
+          <button class="btn md:col-span-2">Lưu</button>
+        </form>
+        <p id="cskh-msg" class="text-sm text-slate-600 mt-2"></p>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2"><h3 class="font-semibold">Nhật ký CSKH</h3><button id="btnReloadCare" class="px-3 py-2 rounded-lg border">Tải lại</button></div>
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="text-left"><th class="p-2">Ngày</th><th class="p-2">Khách</th><th class="p-2">SĐT</th><th class="p-2">Trạng thái</th><th class="p-2">Hẹn</th></tr></thead>
+            <tbody id="care-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section id="tab-inventory" class="hidden space-y-4">
+      <div class="card">
+        <h3 class="font-semibold mb-2">Nhập/Xuất kho</h3>
+        <form id="form-stock" class="grid md:grid-cols-3 gap-3">
+          <input name="sku" placeholder="SKU" class="p-3 border rounded-lg" required />
+          <input name="qty" type="number" placeholder="Số lượng (+ nhập / - xuất)" class="p-3 border rounded-lg" required />
+          <input name="note" placeholder="Ghi chú" class="p-3 border rounded-lg" />
+          <button class="btn md:col-span-3">Ghi</button>
+        </form>
+        <p id="stock-msg" class="text-sm text-slate-600 mt-2"></p>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2"><h3 class="font-semibold">Tồn kho theo SKU</h3><button id="btnReloadInv" class="px-3 py-2 rounded-lg border">Tải lại</button></div>
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="text-left"><th class="p-2">SKU</th><th class="p-2">Tên SP</th><th class="p-2">Tồn</th><th class="p-2">Cảnh báo</th></tr></thead>
+            <tbody id="inv-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section id="tab-warranty" class="hidden space-y-4">
+      <div class="card">
+        <h3 class="font-semibold mb-2">Đăng ký bảo hành</h3>
+        <form id="form-warranty" class="grid md:grid-cols-2 gap-3">
+          <input name="serial" placeholder="Số máy/Serial" class="p-3 border rounded-lg" required />
+          <input name="customer" placeholder="Khách hàng" class="p-3 border rounded-lg" required />
+          <input name="phone" placeholder="SĐT" class="p-3 border rounded-lg" required />
+          <input name="purchase" placeholder="Ngày mua (yyyy-mm-dd)" class="p-3 border rounded-lg" required />
+          <button class="btn md:col-span-2">Lưu</button>
+        </form>
+        <p id="war-msg" class="text-sm text-slate-600 mt-2"></p>
+      </div>
+      <div class="card">
+        <div class="flex items-center justify-between mb-2"><h3 class="font-semibold">Lịch bảo dưỡng</h3><button id="btnReloadWar" class="px-3 py-2 rounded-lg border">Tải lại</button></div>
+        <div class="overflow-auto">
+          <table class="w-full text-sm">
+            <thead><tr class="text-left"><th class="p-2">Serial</th><th class="p-2">Khách</th><th class="p-2">SĐT</th><th class="p-2">Mua</th><th class="p-2">Bảo dưỡng kế</th></tr></thead>
+            <tbody id="war-body"></tbody>
+          </table>
+        </div>
+      </div>
+    </section>
+    <section id="tab-settings" class="hidden space-y-4">
+      <div class="card">
+        <h3 class="font-semibold mb-2">Cấu hình</h3>
+        <div class="grid md:grid-cols-2 gap-3">
+          <label class="text-sm">API URL
+            <input id="cfg-api" class="p-3 border rounded-lg w-full" value="https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec" />
+          </label>
+          <label class="text-sm">Ngưỡng cảnh báo tồn
+            <input id="cfg-low" type="number" class="p-3 border rounded-lg w-full" value="2" />
+          </label>
+        </div>
+        <button id="btnSaveCfg" class="btn mt-3">Lưu cấu hình</button>
+        <p id="cfg-msg" class="text-sm text-slate-600 mt-2"></p>
+      </div>
+      <div class="card text-sm text-slate-600">
+        <div class="font-semibold mb-2">Hướng dẫn kết nối (Apps Script)</div>
+        <ul class="list-disc pl-5 space-y-1">
+          <li>POST https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=createOrder — Lưu vào sheet <code>Sales_Orders</code></li>
+          <li>POST https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=logCare — Lưu vào sheet <code>CSKH_Log</code></li>
+          <li>POST https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=stockMove — Lưu nhập/xuất vào <code>Inventory</code></li>
+          <li>GET  https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=getInventory — Trả tồn kho</li>
+          <li>GET  https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=getOrders — Trả danh sách đơn</li>
+          <li>GET  https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=getCare — Trả nhật ký CSKH</li>
+          <li>GET  https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=getWarranty — Trả đăng ký bảo hành</li>
+          <li>POST https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=regWarranty — Lưu đăng ký bảo hành</li>
+          <li>GET  https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec?action=getSummary — KPI tổng quan</li>
+        </ul>
+      </div>
+    </section>
+  </div>
+  <script>
+    const btnLogin = document.getElementById('btnLogin');
+    const btnLogout = document.getElementById('btnLogout');
+    const pinInput = document.getElementById('pin');
+    const tabs = document.querySelectorAll('nav button');
+    const sections = {
+      overview: document.getElementById('tab-overview'),
+      orders: document.getElementById('tab-orders'),
+      cskh: document.getElementById('tab-cskh'),
+      inventory: document.getElementById('tab-inventory'),
+      warranty: document.getElementById('tab-warranty'),
+      settings: document.getElementById('tab-settings'),
+    };
+    function setAuth(state) { localStorage.setItem('klc_auth', state? '1':'0'); updateAuthUI(); }
+    function updateAuthUI() {
+      const authed = localStorage.getItem('klc_auth') === '1';
+      for (const b of tabs) b.disabled = !authed;
+      if (!authed) showTab('overview');
+    }
+    btnLogin.addEventListener('click', () => { if (pinInput.value.trim().length >= 4) setAuth(true); });
+    btnLogout.addEventListener('click', () => setAuth(false));
+    function showTab(name) {
+      for (const [k, el] of Object.entries(sections)) el.classList.toggle('hidden', k !== name);
+      for (const b of tabs) b.classList.toggle('tab-active', b.dataset.tab === name);
+    }
+    for (const b of tabs) b.addEventListener('click', () => showTab(b.dataset.tab));
+    updateAuthUI(); showTab('overview');
+
+    const cfgApi = document.getElementById('cfg-api');
+    const cfgLow = document.getElementById('cfg-low');
+    const cfgMsg = document.getElementById('cfg-msg');
+    function getCfg() {
+      return {
+        api: localStorage.getItem('klc_api') || cfgApi.value || "https://script.google.com/macros/s/AKfycbzA9pN_sizNjxFMbUzRSGKJ0Z6Upw9T8xuRGu1UL-PPew5yYrN0BUKtdFkRfny0AFkKng/exec",
+        low: parseInt(localStorage.getItem('klc_low') || cfgLow.value || "2", 10)
+      };
+    }
+    document.getElementById('btnSaveCfg').addEventListener('click', () => {
+      localStorage.setItem('klc_api', cfgApi.value);
+      localStorage.setItem('klc_low', cfgLow.value);
+      cfgMsg.textContent = "Đã lưu cấu hình.";
+      setTimeout(()=> cfgMsg.textContent = "", 1500);
+    });
+
+    async function callScript(action, data) {
+      const API = getCfg().api;
+      try {
+        const r = await fetch(API + "?action=" + encodeURIComponent(action), {
+          method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(data || {})
+        });
+        if (r.ok) return await r.json().catch(()=>({ ok:true }));
+      } catch {}
+      try {
+        const url = new URL(API);
+        url.searchParams.set("action", action);
+        for (const [k,v] of Object.entries(data||{})) url.searchParams.set(k, String(v));
+        const r2 = await fetch(url.toString());
+        if (r2.ok) return await r2.json().catch(()=>({ ok:true }));
+      } catch {}
+      return { ok:false };
+    }
+
+    async function loadSummary() {
+      const res = await callScript('getSummary');
+      const sum = res && res.data ? res.data : null;
+      document.getElementById('kpi-today').textContent = sum?.revenueToday ?? '—';
+      document.getElementById('kpi-orders').textContent = sum?.ordersToday ?? '—';
+      document.getElementById('kpi-lowstock').textContent = sum?.lowStock ?? '—';
+
+      const labels = sum?.last7?.map(d=>d.date) ?? ['D-6','D-5','D-4','D-3','D-2','D-1','Hôm nay'];
+      const data = sum?.last7?.map(d=>d.revenue) ?? [2,3,1,4,2,5,3];
+      const ctx = document.getElementById('chartRevenue').getContext('2d');
+      new Chart(ctx, {
+        type: 'line',
+        data: { labels, datasets: [{ label: 'Doanh thu (triệu)', data, tension: .35 }] },
+        options: { responsive: true, plugins: { legend: { display: true } }, scales: { y: { beginAtZero: true } } }
+      });
+    }
+
+    document.getElementById('form-order').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = Object.fromEntries(fd.entries());
+      payload.timestamp = new Date().toISOString();
+      const r = await callScript('createOrder', payload);
+      document.getElementById('order-msg').textContent = r.ok !== false ? "Đã lưu đơn." : "Lỗi lưu đơn.";
+      e.target.reset();
+      loadOrders();
+      loadSummary();
+    });
+    async function loadOrders() {
+      const r = await callScript('getOrders');
+      const rows = (r?.data ?? []).slice(0,50).map(o => `
+        <tr class="border-t"><td class="p-2">${o.date ?? ''}</td><td class="p-2">${o.customer ?? ''}</td><td class="p-2">${o.sku ?? ''}</td><td class="p-2">${o.price ?? ''}</td><td class="p-2">${o.channel ?? ''}</td></tr>
+      `).join('');
+      document.getElementById('orders-body').innerHTML = rows || '<tr><td class="p-2" colspan="5">Chưa có dữ liệu</td></tr>';
+    }
+    document.getElementById('btnReloadOrders').addEventListener('click', loadOrders);
+
+    document.getElementById('form-cskh').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = Object.fromEntries(fd.entries());
+      payload.timestamp = new Date().toISOString();
+      const r = await callScript('logCare', payload);
+      document.getElementById('cskh-msg').textContent = r.ok !== false ? "Đã lưu." : "Lỗi lưu.";
+      e.target.reset();
+      loadCare();
+    });
+    async function loadCare() {
+      const r = await callScript('getCare');
+      const rows = (r?.data ?? []).slice(0,100).map(c => `
+        <tr class="border-t"><td class="p-2">${c.date ?? ''}</td><td class="p-2">${c.customer ?? ''}</td><td class="p-2">${c.phone ?? ''}</td><td class="p-2">${c.status ?? ''}</td><td class="p-2">${c.next ?? ''}</td></tr>
+      `).join('');
+      document.getElementById('care-body').innerHTML = rows || '<tr><td class="p-2" colspan="5">Chưa có dữ liệu</td></tr>';
+    }
+    document.getElementById('btnReloadCare').addEventListener('click', loadCare);
+
+    document.getElementById('form-stock').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = Object.fromEntries(fd.entries());
+      payload.qty = Number(payload.qty);
+      payload.timestamp = new Date().toISOString();
+      const r = await callScript('stockMove', payload);
+      document.getElementById('stock-msg').textContent = r.ok !== false ? "Đã ghi." : "Lỗi ghi.";
+      e.target.reset();
+      loadInventory();
+      loadSummary();
+    });
+    async function loadInventory() {
+      const r = await callScript('getInventory');
+      const low = getCfg().low;
+      const rows = (r?.data ?? []).map(i => `
+        <tr class="border-t"><td class="p-2">${i.sku ?? ''}</td><td class="p-2">${i.name ?? ''}</td><td class="p-2">${i.qty ?? ''}</td><td class="p-2">${(i.qty ?? 0) <= low ? '⚠️ Thấp' : ''}</td></tr>
+      `).join('');
+      document.getElementById('inv-body').innerHTML = rows || '<tr><td class="p-2" colspan="4">Chưa có dữ liệu</td></tr>';
+      document.getElementById('kpi-lowstock').textContent = (r?.data ?? []).filter(i => (i.qty ?? 0) <= low).length || '0';
+    }
+    document.getElementById('btnReloadInv').addEventListener('click', loadInventory);
+
+    document.getElementById('form-warranty').addEventListener('submit', async (e)=>{
+      e.preventDefault();
+      const fd = new FormData(e.target);
+      const payload = Object.fromEntries(fd.entries());
+      payload.timestamp = new Date().toISOString();
+      const r = await callScript('regWarranty', payload);
+      document.getElementById('war-msg').textContent = r.ok !== false ? "Đã lưu." : "Lỗi lưu.";
+      e.target.reset();
+      loadWarranty();
+    });
+    async function loadWarranty() {
+      const r = await callScript('getWarranty');
+      const rows = (r?.data ?? []).map(w => `
+        <tr class="border-t"><td class="p-2">${w.serial ?? ''}</td><td class="p-2">${w.customer ?? ''}</td><td class="p-2">${w.phone ?? ''}</td><td class="p-2">${w.purchase ?? ''}</td><td class="p-2">${w.nextService ?? ''}</td></tr>
+      `).join('');
+      document.getElementById('war-body').innerHTML = rows || '<tr><td class="p-2" colspan="5">Chưa có dữ liệu</td></tr>';
+    }
+    document.getElementById('btnReloadWar').addEventListener('click', loadWarranty);
+
+    loadSummary(); loadOrders(); loadCare(); loadInventory(); loadWarranty();
+  </script>
+</body>
+</html>
