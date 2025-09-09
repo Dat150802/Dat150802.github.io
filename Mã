@@ -1,0 +1,570 @@
+/**************** KLC V1 – Apps Script Backend ****************/
+/*  Features:
+    - Google Sign-In (Xác thực ID token)
+    - Users ACL (tự tạo user lần đầu đăng nhập)
+    - CRUD 6 modules (customers, cskh, warranty_service, inventory_movements, finance, catalog)
+    - Dashboard, Audit Logs, CSV export
+    - API router dùng cho google.script.run (ở trang Apps Script) & doPost (gọi từ GitHub Pages)
+*/
+
+/***** CONFIG *****/
+const OAUTH_CLIENT_ID = "229964671691-jvq8pstlajqa9v6g0rhfi0u8ei39453u.apps.googleusercontent.com"; // kiểm tra 'aud'
+const SPREADSHEET_ID  = "1k6jPXQw_GZhUfRYaP9x8ZIiaScIBuVV86ZIGabtsW60"; // ID Google Sheet của bạn
+const WEBAPP_NAME     = "KLC Internal V1";
+const DEFAULT_ADMIN_EMAIL = "dat15082k2@gmail.com"; // seed admin
+const ALLOWED_EMAIL_DOMAINS = []; // ví dụ ["ghemassageklc.com"]; [] = không giới hạn
+
+const SHEETS = {
+  customers: 'customers',
+  cskh: 'cskh',
+  warranty: 'warranty_service',
+  inv: 'inventory_movements',
+  finance: 'finance',
+  users: 'users',
+  catalog: 'catalog_models',
+  settings: 'settings',
+  logs: 'audit_logs',
+};
+const DATE_FMT = 'dd/MM/yyyy';
+
+/***** HTML ENTRY (giữ nguyên để có thể chạy trong Apps Script) *****/
+function doGet() {
+  const t = HtmlService.createTemplateFromFile('Index'); // file Index.html trong project
+  t.appName = WEBAPP_NAME;
+  return t.evaluate()
+    .setTitle(WEBAPP_NAME)
+    .setSandboxMode(HtmlService.SandboxMode.IFRAME)
+    .addMetaTag('viewport', 'width=device-width, initial-scale=1');
+}
+function include_(f){ return HtmlService.createHtmlOutputFromFile(f).getContent(); }
+
+/***** AUTH – verify Google ID token *****/
+function verifyIdToken_(idToken){
+  if (!idToken) throw new Error('MISSING_ID_TOKEN');
+  const url = 'https://oauth2.googleapis.com/tokeninfo?id_token=' + encodeURIComponent(idToken);
+  const res = UrlFetchApp.fetch(url, {muteHttpExceptions:true});
+  if (res.getResponseCode() !== 200) throw new Error('INVALID_ID_TOKEN');
+  const p = JSON.parse(res.getContentText());
+
+  // Kiểm tra email xác minh
+  if (!p.email_verified) throw new Error('EMAIL_NOT_VERIFIED');
+
+  // Kiểm tra aud = CLIENT_ID (tránh token từ project khác)
+  if (OAUTH_CLIENT_ID && p.aud && String(p.aud) !== String(OAUTH_CLIENT_ID)) {
+    throw new Error('WRONG_CLIENT_ID');
+  }
+
+  // Giới hạn domain (nếu bạn cấu hình)
+  if (ALLOWED_EMAIL_DOMAINS.length){
+    const domain = String(p.email).split('@')[1].toLowerCase();
+    if (!ALLOWED_EMAIL_DOMAINS.includes(domain)) throw new Error('DOMAIN_NOT_ALLOWED');
+  }
+  return { email:p.email, name:p.name||'', picture:p.picture||'' };
+}
+
+/***** UTIL *****/
+function now_(){ return new Date(); }
+function fmtDate_(d){ return Utilities.formatDate(d, Session.getScriptTimeZone(), DATE_FMT); }
+function parseDDMMYYYY_(s){ if(!s) return ''; const [dd,mm,yyyy] = String(s).split('/').map(x=>parseInt(x,10)); return new Date(yyyy,(mm-1),dd); }
+function monthOf_(d){ return Number(Utilities.formatDate(d, Session.getScriptTimeZone(),'M')); }
+function yyyymmdd_(d){ return Utilities.formatDate(d, Session.getScriptTimeZone(),'yyyyMMdd'); }
+function normalizePhone_(s){ return String(s||'').replace(/\D+/g,'').replace(/^84/,'0'); }
+
+/***** SHEET HELPERS *****/
+function ss_(){ return SpreadsheetApp.openById(SPREADSHEET_ID); }
+function sh_(name){ return ss_().getSheetByName(name) || ss_().insertSheet(name); }
+function headers_(name){ const sh=sh_(name); return sh.getRange(1,1,1,Math.max(1,sh.getLastColumn())).getValues()[0]; }
+function findColIndex_(hdr, col){ const i = hdr.indexOf(col); if(i<0) throw new Error('Missing col '+col); return i; }
+function readAll_(name){
+  const sh = sh_(name); const lr = sh.getLastRow(); const lc = sh.getLastColumn();
+  if (lr<2 || lc<1) return {headers: headers_(name), rows: []};
+  return {headers: headers_(name), rows: sh.getRange(2,1,lr-1,lc).getValues()};
+}
+function append_(name, obj){
+  const sh = sh_(name), hdr = headers_(name);
+  if (sh.getLastRow() === 0) sh.getRange(1,1,1,hdr.length).setValues([hdr]); // đảm bảo có header
+  const row = hdr.map(h => (h in obj) ? obj[h] : '');
+  sh.appendRow(row);
+  return row;
+}
+function writeBackByKey_(name, keyCol, keyVal, obj){
+  const sh = sh_(name), hdr = headers_(name);
+  const keyIdx = findColIndex_(hdr, keyCol);
+  const rng = sh.getRange(2,1,Math.max(0, sh.getLastRow()-1), sh.getLastColumn());
+  const vals = rng.getValues();
+  for (let r=0; r<vals.length; r++){
+    if (String(vals[r][keyIdx])===String(keyVal)){
+      hdr.forEach((h,c)=>{ if (h in obj) vals[r][c]=obj[h]; });
+      rng.setValues(vals);
+      return true;
+    }
+  }
+  return false;
+}
+function existsBy_(name, col, val){
+  const data=readAll_(name); const i=findColIndex_(data.headers,col);
+  return data.rows.some(r => String(r[i])===String(val));
+}
+
+/***** AUDIT *****/
+function logAudit_(userEmail, module, action, recordId, changes){
+  append_(SHEETS.logs, { time:new Date(), user_email:userEmail, module, action, record_id:recordId, changes: JSON.stringify(changes||{}) });
+}
+
+/***** ID GEN *****/
+function genId_(prefix){ return `${prefix}-${yyyymmdd_(now_())}-${Math.floor(Math.random()*9000)+1000}`; }
+
+/***** USERS *****/
+function getUser_(email){
+  const {headers,rows} = readAll_(SHEETS.users);
+  if (!headers || headers.length === 0) return null;
+  const iEmail = findColIndex_((headers),'email');
+  for (const r of rows){ if(String(r[iEmail]).toLowerCase()===String(email).toLowerCase()){ const o={}; headers.forEach((h,i)=>o[h]=r[i]); return o; } }
+  return null;
+}
+
+// TỰ TẠO user nếu chưa có (role=staff, status=active) để đăng nhập được ngay
+function ensureActiveUser_(email){
+  let u = getUser_(email);
+  if (!u) {
+    const obj = {
+      email: String(email).toLowerCase(),
+      ten: '',
+      role: 'staff',
+      status: 'active',
+      created_at: new Date(),
+      last_login_at: ''
+    };
+    append_(SHEETS.users, obj);
+    logAudit_('system', 'admin', 'autoProvisionUser', obj.email, obj);
+    u = obj;
+  }
+  if (String(u.status).toLowerCase()!=='active') throw new Error('USER_SUSPENDED');
+  return u;
+}
+function touchLastLogin_(email){ writeBackByKey_(SHEETS.users,'email',email,{last_login_at:new Date()}); }
+
+/***** PERM (đơn giản) *****/
+function assertPerm_(role, module, action){
+  if (role==='admin') return;
+  if (module==='admin') throw new Error('FORBIDDEN');
+  // Ví dụ muốn chặn staff xem finance thì mở dòng dưới:
+  // if (module==='finance' && action==='read') throw new Error('FORBIDDEN');
+}
+
+/***** CUSTOMERS + AUTO WARRANTY *****/
+function createCustomer_(payload, actor){
+  const phone = normalizePhone_(payload.so_dien_thoai);
+  if (!payload.ten) throw new Error('TEN_REQUIRED');
+  if (!phone) throw new Error('PHONE_REQUIRED');
+  if (existsBy_(SHEETS.customers, 'so_dien_thoai', phone)) throw new Error('PHONE_DUPLICATE');
+
+  const id = genId_('CUS');
+  const ngay = payload.ngay ? parseDDMMYYYY_(payload.ngay) : new Date();
+  let soNamBH = Number(payload.so_nam_bao_hanh||'');
+
+  if (!soNamBH){
+    const {headers, rows} = readAll_(SHEETS.catalog);
+    if (headers.length){
+      const iCode = findColIndex_(headers,'model_code');
+      const iDef  = findColIndex_(headers,'bao_hanh_mac_dinh_nam');
+      for(const r of rows){ if(String(r[iCode])===String(payload.mau_ghe||'')){ soNamBH = Number(r[iDef]||3); break; } }
+    }
+    if (!soNamBH) soNamBH = 3;
+  }
+
+  const obj = {
+    customer_id:id, ngay, ten: payload.ten, so_dien_thoai: phone, dia_chi: payload.dia_chi||'',
+    nguon_khach: payload.nguon_khach||'khac', trang_thai_mua: payload.trang_thai_mua||'Chưa mua',
+    mau_ghe: payload.mau_ghe||'', gia_ban: Number(payload.gia_ban||'')||'',
+    so_nam_bao_hanh: soNamBH, ghi_chu: payload.ghi_chu||'',
+    created_by: actor, updated_by: actor, created_at:new Date(), updated_at:new Date(),
+  };
+  append_(SHEETS.customers, obj);
+  logAudit_(actor,'customers','create',id,obj);
+
+  if (String(obj.trang_thai_mua)==='Đã mua'){ createWarrantyScheduleForCustomer_(obj, actor); }
+  return {ok:true, id};
+}
+function updateCustomer_(id, payload, actor){
+  const data = readAll_(SHEETS.customers);
+  const iId = findColIndex_(data.headers,'customer_id');
+  const iPhone = findColIndex_(data.headers,'so_dien_thoai');
+  const iStatus = findColIndex_(data.headers,'trang_thai_mua');
+  let found=null; for(const r of data.rows){ if(String(r[iId])===String(id)){ found=r; break; } }
+  if (!found) throw new Error('NOT_FOUND');
+
+  const phone = payload.so_dien_thoai ? normalizePhone_(payload.so_dien_thoai) : String(found[iPhone]);
+  if (payload.so_dien_thoai && phone!==String(found[iPhone])){
+    if (existsBy_(SHEETS.customers,'so_dien_thoai',phone)) throw new Error('PHONE_DUPLICATE');
+  }
+  const update = Object.assign({}, payload, {so_dien_thoai:phone, updated_by:actor, updated_at:new Date()});
+  writeBackByKey_(SHEETS.customers,'customer_id',id,update);
+  logAudit_(actor,'customers','update',id,update);
+
+  const becamePurchased = (payload.trang_thai_mua==='Đã mua' && String(found[iStatus])!=='Đã mua');
+  if (becamePurchased){ createWarrantyScheduleForCustomer_(getCustomerById_(id), actor); }
+  return {ok:true};
+}
+function getCustomerById_(id){
+  const {headers,rows} = readAll_(SHEETS.customers);
+  const iId = findColIndex_(headers,'customer_id');
+  for(const r of rows){ if(String(r[iId])===String(id)){ const o={}; headers.forEach((h,i)=>o[h]=r[i]); return o; } }
+  return null;
+}
+function listCustomers_(month){
+  const {headers,rows} = readAll_(SHEETS.customers);
+  if (!headers.length) return [];
+  const iNgay = findColIndex_(headers,'ngay');
+  const out=[]; for(const r of rows){
+    const d = (r[iNgay] instanceof Date) ? r[iNgay] : parseDDMMYYYY_(r[iNgay]);
+    if (!month || monthOf_(d)===Number(month)){ const o={}; headers.forEach((h,i)=>o[h]=r[i]); out.push(o); }
+  }
+  return out;
+}
+
+/***** CSKH *****/
+function createCSKH_(payload, actor){
+  const flags = ['con_tiem_nang','het_tiem_nang','dang_nuoi_khach','dang_hen_len'];
+  const cnt = flags.reduce((a,k)=>a+(payload[k]?1:0),0);
+  if (cnt!==1) throw new Error('CSKH_FLAG_INVALID');
+
+  const id = genId_('CARE');
+  const obj = {
+    cskh_id:id, ngay: payload.ngay?parseDDMMYYYY_(payload.ngay):new Date(),
+    customer_id: payload.customer_id, nhan_vien: payload.nhan_vien||'',
+    noi_dung_cskh: payload.noi_dung_cskh||'', phan_hoi_khach: payload.phan_hoi_khach||'',
+    kenh: payload.kenh||'Gọi điện',
+    con_tiem_nang: !!payload.con_tiem_nang, het_tiem_nang: !!payload.het_tiem_nang,
+    dang_nuoi_khach: !!payload.dang_nuoi_khach, dang_hen_len: !!payload.dang_hen_len,
+    next_action_date: payload.next_action_date?parseDDMMYYYY_(payload.next_action_date):'',
+    created_by:actor, updated_by:actor, created_at:new Date(), updated_at:new Date(),
+  };
+  append_(SHEETS.cskh,obj);
+  logAudit_(actor,'cskh','create',id,obj);
+  return {ok:true,id};
+}
+function listCSKHByCustomer_(cid){
+  const {headers,rows} = readAll_(SHEETS.cskh);
+  if (!headers.length) return [];
+  const iCid = findColIndex_(headers,'customer_id');
+  const out=[]; for(const r of rows){ if(String(r[iCid])===String(cid)){ const o={}; headers.forEach((h,i)=>o[h]=r[i]); out.push(o); } }
+  return out;
+}
+
+/***** WARRANTY *****/
+function createWarrantyScheduleForCustomer_(c, actor){
+  const years = Number(c.so_nam_bao_hanh||3);
+  const base = (c.ngay instanceof Date) ? c.ngay : parseDDMMYYYY_(c.ngay);
+  const steps = Math.floor((years*12)/6);
+
+  const {headers,rows} = readAll_(SHEETS.warranty);
+  const iCid = findColIndex_(headers,'customer_id');
+  const iDue = findColIndex_(headers,'ngay_du_kien');
+  const iType = findColIndex_(headers,'loai');
+
+  for(let k=1;k<=steps;k++){
+    const due = new Date(base.getFullYear(), base.getMonth()+k*6, base.getDate());
+    let exists=false;
+    for(const r of rows){
+      const rd = r[iDue];
+      const same = (rd instanceof Date)? rd.toDateString()===due.toDateString() : (new Date(rd)).toDateString()===due.toDateString();
+      if (String(r[iCid])===String(c.customer_id) && String(r[iType])==='Bảo dưỡng' && same){ exists=true; break; }
+    }
+    if (!exists){
+      const wsId = genId_('WS');
+      append_(SHEETS.warranty,{
+        ws_id:wsId, ngay:'', customer_id:c.customer_id, loai:'Bảo dưỡng', mau_ghe:c.mau_ghe||'',
+        tinh_trang_ghe:'Bình thường', y_kien_khach:'', ky_bao_duong_thang:monthOf_(due),
+        trang_thai:'Đến kỳ', ngay_du_kien:due,
+        created_by:actor, updated_by:actor, created_at:new Date(), updated_at:new Date()
+      });
+      logAudit_(actor,'warranty_service','schedule',wsId,{customer_id:c.customer_id, due});
+    }
+  }
+  return {ok:true};
+}
+function listWarrantyByMonth_(month){
+  const {headers,rows} = readAll_(SHEETS.warranty);
+  if (!headers.length) return [];
+  const iMon = findColIndex_(headers,'ky_bao_duong_thang');
+  const out=[]; for(const r of rows){ if(Number(r[iMon])===Number(month)){ const o={}; headers.forEach((h,i)=>o[h]=r[i]); out.push(o); } }
+  return out;
+}
+function markWarrantyHandled_(ws_id, actor){
+  writeBackByKey_(SHEETS.warranty,'ws_id',ws_id,{trang_thai:'Đã xử lý', updated_by:actor, updated_at:new Date()});
+  logAudit_(actor,'warranty_service','update',ws_id,{trang_thai:'Đã xử lý'});
+  return {ok:true};
+}
+
+/***** INVENTORY *****/
+function createInventoryMove_(payload, actor){
+  const id = genId_('INV');
+  const obj = {
+    im_id:id, ngay: payload.ngay?parseDDMMYYYY_(payload.ngay):new Date(),
+    mau_ghe: payload.mau_ghe, huong: payload.huong, so_luong: Number(payload.so_luong||0),
+    ly_do: payload.ly_do||'', nguon_nhap_xuat: payload.nguon_nhap_xuat||'',
+    tham_chieu: payload.tham_chieu||'', ghi_chu: payload.ghi_chu||'',
+    created_by:actor, created_at:new Date(),
+  };
+  if (!obj.mau_ghe || !obj.huong || obj.so_luong<=0) throw new Error('INV_INVALID');
+  append_(SHEETS.inv,obj);
+  logAudit_(actor,'inventory_movements','create',id,obj);
+  return {ok:true,id};
+}
+function stockView_(){
+  const {headers,rows} = readAll_(SHEETS.inv);
+  if (!headers.length) return [];
+  const iM=findColIndex_(headers,'mau_ghe'), iH=findColIndex_(headers,'huong'), iQ=findColIndex_(headers,'so_luong');
+  const map={};
+  for(const r of rows){
+    const m=String(r[iM]||''); if(!m) continue;
+    const h=String(r[iH]||''); const q=Number(r[iQ]||0);
+    if(!map[m]) map[m]={ton_dau:0,nhap:0,xuat:0};
+    if(h==='Nhập') map[m].nhap+=q; else if(h==='Xuất') map[m].xuat+=q;
+  }
+  const settings = getSettings_();
+  const initStocks = JSON.parse(settings.initial_stocks||'{}'); // {"KY02": 3, ...}
+  const out=[];
+  Object.keys(map).forEach(m=>{
+    const s=map[m]; const ton_dau=Number(initStocks[m]||0); const ton_cuoi=ton_dau+s.nhap-s.xuat;
+    out.push({mau_ghe:m, ton_dau, nhap:s.nhap, xuat:s.xuat, ton_cuoi});
+  });
+  return out;
+}
+
+/***** FINANCE *****/
+function createFinance_(payload, actor){
+  const id = genId_('FIN');
+  const obj = {
+    fin_id:id, ngay: payload.ngay?parseDDMMYYYY_(payload.ngay):new Date(),
+    loai: payload.loai, nhom: payload.nhom||'', noi_dung: payload.noi_dung||'',
+    so_tien: Number(payload.so_tien||0), phuong_thuc: payload.phuong_thuc||'',
+    chung_tu: payload.chung_tu||'', ghi_chu: payload.ghi_chu||'',
+    created_by:actor, created_at:new Date(),
+  };
+  if(!obj.loai || !obj.so_tien) throw new Error('FIN_INVALID');
+  append_(SHEETS.finance,obj);
+  logAudit_(actor,'finance','create',id,obj);
+  return {ok:true,id};
+}
+function financeMonthly_(month){
+  const {headers,rows} = readAll_(SHEETS.finance);
+  if (!headers.length) return {sumThu:0,sumChi:0,loiNhuan:0,byDay:{},byGroup:{}};
+  const iNgay=findColIndex_(headers,'ngay'), iLoai=findColIndex_(headers,'loai'),
+        iNhom=findColIndex_(headers,'nhom'), iSo=findColIndex_(headers,'so_tien');
+  let sumThu=0,sumChi=0; const byDay={}, byGroup={};
+  for(const r of rows){
+    const d=(r[iNgay] instanceof Date)?r[iNgay]:parseDDMMYYYY_(r[iNgay]);
+    if(month && monthOf_(d)!==Number(month)) continue;
+    const day=yyyymmdd_(d);
+    if(!byDay[day]) byDay[day]={Thu:0,Chi:0};
+    const loai=String(r[iLoai]); const v=Number(r[iSo]||0);
+    if(loai==='Thu'){ sumThu+=v; byDay[day].Thu+=v; } else { sumChi+=v; byDay[day].Chi+=v; }
+    const nhom=String(r[iNhom]||'Khác'); if(!byGroup[nhom]) byGroup[nhom]=0; byGroup[nhom]+=v;
+  }
+  return {sumThu,sumChi,loiNhuan:(sumThu-sumChi), byDay, byGroup};
+}
+
+/***** DASHBOARD *****/
+function dashboard_(month){
+  const customers = listCustomers_(month);
+  const khachHangMoi = customers.length;
+  let daMua=0,chuaMua=0; const topNguon={};
+  customers.forEach(c=>{ (String(c.trang_thai_mua)==='Đã mua')?daMua++:chuaMua++; const nk=String(c.nguon_khach||'khac'); topNguon[nk]=(topNguon[nk]||0)+1; });
+
+  const {headers:hc,rows:rc}=readAll_(SHEETS.cskh);
+  let soPhien=0, coNext=0;
+  if (hc.length){
+    const iNgay=findColIndex_(hc,'ngay'), iNext=findColIndex_(hc,'next_action_date');
+    for(const r of rc){ const d=(r[iNgay] instanceof Date)?r[iNgay]:parseDDMMYYYY_(r[iNgay]); if(month && monthOf_(d)!==Number(month)) continue; soPhien++; if(r[iNext]) coNext++; }
+  }
+  const tiLeNext = soPhien? (coNext/soPhien):0;
+
+  const wsList = listWarrantyByMonth_(month);
+  let denKy=0,daXL=0,quaHan=0; wsList.forEach(w=>{ if(w.trang_thai==='Đến kỳ') denKy++; else if(w.trang_thai==='Đã xử lý') daXL++; else if(w.trang_thai==='Quá hạn') quaHan++; });
+
+  const stock = stockView_();
+  const settings = getSettings_(); const threshold=Number(settings.min_stock_threshold||0);
+  const topTonThap = stock.sort((a,b)=>a.ton_cuoi-b.ton_cuoi).slice(0,5)
+    .map(x=>({model:x.mau_ghe, ton_cuoi:x.ton_cuoi, thap:(threshold && x.ton_cuoi<threshold)}));
+
+  const {headers:hi,rows:ri}=readAll_(SHEETS.inv);
+  const invByDay={}; const topSell={};
+  if (hi.length){
+    const iNgayI=findColIndex_(hi,'ngay'), iHuong=findColIndex_(hi,'huong'), iQty=findColIndex_(hi,'so_luong'), iLyDo=findColIndex_(hi,'ly_do'), iModel=findColIndex_(hi,'mau_ghe');
+    for(const r of ri){
+      const d=(r[iNgayI] instanceof Date)?r[iNgayI]:parseDDMMYYYY_(r[iNgayI]); if(month && monthOf_(d)!==Number(month)) continue;
+      const day=yyyymmdd_(d); if(!invByDay[day]) invByDay[day]={Nhap:0,Xuat:0};
+      const huong=String(r[iHuong]); const q=Number(r[iQty]||0); if(huong==='Nhập') invByDay[day].Nhap+=q; else invByDay[day].Xuat+=q;
+      if(String(r[iHuong])==='Xuất' && String(r[iLyDo])==='Bán'){ const m=String(r[iModel]); topSell[m]=(topSell[m]||0)+q; }
+    }
+  }
+  const topSellArr = Object.keys(topSell).map(k=>({model:k, qty:topSell[k]})).sort((a,b)=>b.qty-a.qty).slice(0,5);
+
+  return { khachHangMoi, daMua, chuaMua, topNguon, soPhienCSKH:soPhien, tiLeNext,
+           baoDuong:{denKy,daXL,quaHan}, tonKho:topTonThap, invByDay,
+           finance: financeMonthly_(month), topSell: topSellArr };
+}
+
+/***** SETTINGS *****/
+function getSettings_(){
+  const {rows} = readAll_(SHEETS.settings);
+  const map={}; rows.forEach(r=>{ map[String(r[0])] = r[1]; });
+  if (!map.dashboard_month) map.dashboard_month = String(monthOf_(new Date()));
+  if (!map.min_stock_threshold) map.min_stock_threshold = '1';
+  return map;
+}
+
+/***** CSV EXPORT *****/
+function exportCsv_(sheetName){
+  const sh = sh_(sheetName); const vals = sh.getDataRange().getValues();
+  const csv = vals.map(row => row.map(cell=>{
+    const s = (cell instanceof Date) ? fmtDate_(cell) : String(cell).replace(/"/g,'""');
+    return /[",\n]/.test(s) ? `"${s}"` : s;
+  }).join(',')).join('\n');
+  return {filename:`${sheetName}-${yyyymmdd_(new Date())}.csv`, base64: Utilities.base64Encode(csv)};
+}
+
+/***** API ROUTER – dùng chung cho google.script.run & doPost *****/
+function api(action, payload, idToken){
+  try{
+    const auth = verifyIdToken_(idToken);
+    const user = ensureActiveUser_(auth.email);
+    touchLastLogin_(auth.email);
+    const role = String(user.role||'staff');
+    let result;
+
+    switch(action){
+      case 'me': result = {email:auth.email, role:role}; break;
+
+      case 'dashboard': result = dashboard_(payload.month||getSettings_().dashboard_month); break;
+
+      case 'customer.create': assertPerm_(role,'customers','create'); result = createCustomer_(payload, auth.email); break;
+      case 'customer.update': assertPerm_(role,'customers','update'); result = updateCustomer_(payload.customer_id, payload, auth.email); break;
+      case 'customer.list':   assertPerm_(role,'customers','read');   result = listCustomers_(payload.month||''); break;
+
+      case 'cskh.create':     assertPerm_(role,'cskh','create');      result = createCSKH_(payload, auth.email); break;
+      case 'cskh.byCustomer': assertPerm_(role,'cskh','read');        result = listCSKHByCustomer_(payload.customer_id); break;
+
+      case 'warranty.byMonth':    assertPerm_(role,'warranty_service','read');   result = listWarrantyByMonth_(payload.month); break;
+      case 'warranty.markHandled':assertPerm_(role,'warranty_service','update'); result = markWarrantyHandled_(payload.ws_id, auth.email); break;
+
+      case 'inv.create':     assertPerm_(role,'inventory_movements','create'); result = createInventoryMove_(payload, auth.email); break;
+      case 'inv.stockView':  assertPerm_(role,'inventory_movements','read');   result = stockView_(); break;
+
+      case 'fin.create':     assertPerm_(role,'finance','create'); result = createFinance_(payload, auth.email); break;
+      case 'fin.monthly':    assertPerm_(role,'finance','read');   result = financeMonthly_(payload.month); break;
+
+      case 'admin.users.get':     assertPerm_(role,'admin','read');  result = readAll_(SHEETS.users); break;
+      case 'admin.users.upsert':  assertPerm_(role,'admin','write'); result = adminUpsertUser_(payload, auth.email); break;
+      case 'admin.catalog.get':   assertPerm_(role,'admin','read');  result = readAll_(SHEETS.catalog); break;
+      case 'admin.catalog.upsert':assertPerm_(role,'admin','write'); result = adminUpsertCatalog_(payload, auth.email); break;
+      case 'admin.settings.get':  assertPerm_(role,'admin','read');  result = getSettings_(); break;
+      case 'admin.settings.set':  assertPerm_(role,'admin','write'); result = adminSetSetting_(payload, auth.email); break;
+
+      case 'export.csv': result = exportCsv_(payload.sheet); break;
+      default: throw new Error('UNKNOWN_ACTION');
+    }
+    return {ok:true, data: result};
+  }catch(err){
+    return {ok:false, error: String(err)};
+  }
+}
+
+/***** ADMIN HELPERS *****/
+function adminUpsertUser_(payload, actor){
+  if (!payload.email) throw new Error('EMAIL_REQUIRED');
+  const email = String(payload.email).toLowerCase();
+  const exists = getUser_(email);
+  const obj = { email, ten:payload.ten||'', role:payload.role||'staff', status:payload.status||'active',
+                created_at: (exists? exists.created_at:new Date()), last_login_at:(exists?exists.last_login_at:'') };
+  if (exists) writeBackByKey_(SHEETS.users,'email',email,obj); else append_(SHEETS.users,obj);
+  logAudit_(actor,'admin','upsertUser', email, obj);
+  return {ok:true};
+}
+function adminUpsertCatalog_(payload, actor){
+  if (!payload.model_code) throw new Error('MODEL_CODE_REQUIRED');
+  const {headers,rows} = readAll_(SHEETS.catalog);
+  let found=false;
+  if (headers.length){
+    const iCode = findColIndex_(headers,'model_code');
+    for(const r of rows){ if(String(r[iCode])===payload.model_code){ found=true; break; } }
+  }
+  const obj = { model_code:payload.model_code, model_name:payload.model_name||payload.model_code, bao_hanh_mac_dinh_nam:Number(payload.bao_hanh_mac_dinh_nam||3) };
+  if(found) writeBackByKey_(SHEETS.catalog,'model_code',obj.model_code,obj); else append_(SHEETS.catalog,obj);
+  logAudit_(actor,'admin','upsertCatalog', obj.model_code, obj);
+  return {ok:true};
+}
+function adminSetSetting_(payload, actor){
+  if (!payload.key) throw new Error('SETTING_KEY_REQUIRED');
+  const sh = sh_(SHEETS.settings);
+  const map={}; const lr=sh.getLastRow(); const vals = (lr>0)? sh.getRange(1,1,lr,2).getValues() : [['key','value']];
+  for(let i=1;i<vals.length;i++){ map[vals[i][0]] = vals[i][1]; }
+  map[payload.key] = payload.value;
+  const out=[['key','value']]; Object.keys(map).forEach(k=>out.push([k,map[k]]));
+  sh.clear(); sh.getRange(1,1,out.length,2).setValues(out);
+  logAudit_(actor,'admin','setSetting', payload.key, {value:payload.value});
+  return {ok:true};
+}
+
+/***** BOOTSTRAP – tạo sheet + seed mặc định *****/
+function bootstrapSheets(){
+  const def = {
+    [SHEETS.customers]: ['customer_id','ngay','ten','so_dien_thoai','dia_chi','nguon_khach','trang_thai_mua','mau_ghe','gia_ban','so_nam_bao_hanh','ghi_chu','created_by','updated_by','created_at','updated_at'],
+    [SHEETS.cskh]: ['cskh_id','ngay','customer_id','nhan_vien','noi_dung_cskh','phan_hoi_khach','kenh','con_tiem_nang','het_tiem_nang','dang_nuoi_khach','dang_hen_len','next_action_date','created_by','updated_by','created_at','updated_at'],
+    [SHEETS.warranty]: ['ws_id','ngay','customer_id','loai','mau_ghe','tinh_trang_ghe','y_kien_khach','ky_bao_duong_thang','trang_thai','ngay_du_kien','created_by','updated_by','created_at','updated_at'],
+    [SHEETS.inv]: ['im_id','ngay','mau_ghe','huong','so_luong','ly_do','nguon_nhap_xuat','tham_chieu','ghi_chu','created_by','created_at'],
+    [SHEETS.finance]: ['fin_id','ngay','loai','nhom','noi_dung','so_tien','phuong_thuc','chung_tu','ghi_chu','created_by','created_at'],
+    [SHEETS.users]: ['email','ten','role','status','created_at','last_login_at'],
+    [SHEETS.catalog]: ['model_code','model_name','bao_hanh_mac_dinh_nam'],
+    [SHEETS.settings]: ['key','value'],
+    [SHEETS.logs]: ['time','user_email','module','action','record_id','changes'],
+  };
+  Object.keys(def).forEach(name=>{
+    const sh=sh_(name);
+    if (sh.getLastRow()===0){ sh.getRange(1,1,1,def[name].length).setValues([def[name]]); }
+  });
+  if (!getUser_(DEFAULT_ADMIN_EMAIL)){
+    append_(SHEETS.users, {email:DEFAULT_ADMIN_EMAIL, ten:'Admin', role:'admin', status:'active', created_at:new Date(), last_login_at:''});
+  }
+  if (readAll_(SHEETS.catalog).rows.length===0){
+    [
+      {model_code:'KY02',model_name:'KLC KY02',bao_hanh_mac_dinh_nam:3},
+      {model_code:'KY15',model_name:'KLC KY15',bao_hanh_mac_dinh_nam:3},
+      {model_code:'KY20',model_name:'KLC KY20',bao_hanh_mac_dinh_nam:4},
+      {model_code:'RO66',model_name:'KLC RO66',bao_hanh_mac_dinh_nam:3},
+      {model_code:'RO68',model_name:'KLC RO68',bao_hanh_mac_dinh_nam:4},
+      {model_code:'K7979',model_name:'KLC K7979 Luxury',bao_hanh_mac_dinh_nam:5}
+    ].forEach(m=>append_(SHEETS.catalog,m));
+  }
+  // defaults
+  const s = getSettings_();
+  adminSetSetting_({key:'min_stock_threshold', value:String(s.min_stock_threshold||'1')}, DEFAULT_ADMIN_EMAIL);
+  adminSetSetting_({key:'dashboard_month', value:String(s.dashboard_month)}, DEFAULT_ADMIN_EMAIL);
+}
+
+/***** doPost – dùng khi gọi từ GitHub Pages (fetch POST text/plain) *****/
+function doPost(e) {
+  let body = {};
+  try { body = JSON.parse(e.postData && e.postData.contents || '{}'); } catch(_) {}
+  let out;
+  try {
+    // Nhận token theo nhiều tên để không lệch key giữa FE/BE
+    const idToken = body.idToken || body.id_token || body.token || '';
+    const action  = body.action || 'me';
+    const payload = body.payload || {};
+
+    out = api(action, payload, idToken);
+
+    // Phòng trường hợp api trả data thô
+    if (!out || typeof out !== 'object' || out.ok === undefined) {
+      out = { ok: true, data: out };
+    }
+  } catch (err) {
+    out = { ok:false, error:String(err) };
+  }
+  return ContentService
+    .createTextOutput(JSON.stringify(out))
+    .setMimeType(ContentService.MimeType.JSON);
+}
