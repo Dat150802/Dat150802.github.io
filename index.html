@@ -1,427 +1,248 @@
-<!doctype html>
+<!DOCTYPE html>
 <html lang="vi">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1"/>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>KLC Bến Lức</title>
+
   <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+
+  <!-- Google Identity Services -->
   <script src="https://accounts.google.com/gsi/client" async defer></script>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+
+  <!-- PapaParse for robust CSV parsing -->
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+
+  <!-- Chart.js for charts -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+
   <style>
-    :root{--klc-blue:#1f4b99}
-    body{background:#f6f8fb}
-    .klc-navbar{background:linear-gradient(90deg,var(--klc-blue),#0a2f6b)}
-    .klc-navbar .navbar-brand,.klc-navbar .nav-link,.klc-navbar .navbar-text{color:#fff!important}
-    .card{border-radius:16px;box-shadow:0 6px 18px rgba(0,0,0,.06)}
-    .hidden{display:none!important}
-    .small-scroll{max-height:430px;overflow:auto}
+    :root { --klc-blue:#1f4b99; }
+    body { background:#f7f9fc; }
+    .klc-navbar { background: linear-gradient(90deg, var(--klc-blue), #0a2f6b); }
+    .klc-navbar .navbar-brand, .klc-navbar .nav-link, .klc-navbar .navbar-text { color:#fff !important; }
+    .card { border-radius:16px; box-shadow:0 8px 24px rgba(0,0,0,.06); }
+    .btn-klc { background:var(--klc-blue); color:#fff; }
+    .btn-klc:hover { opacity:.9; color:#fff; }
+    .hidden { display:none!important; }
+    .small-scroll { max-height:420px; overflow:auto; }
+    .kpi { font-size: 1.75rem; font-weight: 700; }
+    .form-inline > * { margin-right: .5rem; }
+    code, pre { user-select:text; }
+    .muted { color: #6c757d; }
   </style>
 </head>
 <body>
-<nav class="navbar klc-navbar navbar-expand-lg">
-  <div class="container-fluid">
-    <a class="navbar-brand fw-bold" href="#">KLC Bến Lức</a>
-    <ul class="navbar-nav me-auto mb-2 mb-lg-0" id="topmenu">
-      <li class="nav-item"><a class="nav-link active" data-section="dashboard" href="#">Trang chủ</a></li>
-      <li class="nav-item"><a class="nav-link" data-section="customers" href="#">Khách hàng</a></li>
-      <li class="nav-item"><a class="nav-link" data-section="cskh" href="#">CSKH</a></li>
-      <li class="nav-item"><a class="nav-link" data-section="warranty" href="#">Bảo hành & BD</a></li>
-      <li class="nav-item"><a class="nav-link" data-section="inventory" href="#">Tồn kho</a></li>
-      <li class="nav-item"><a class="nav-link" data-section="finance" href="#">Thu & Chi</a></li>
-      <li class="nav-item"><a class="nav-link d-none" id="adminTab" data-section="admin" href="#">Quản trị</a></li>
-    </ul>
-    <span id="meBox" class="navbar-text small"></span>
-  </div>
-</nav>
-
-<div class="container py-4">
-
-  <div id="signedOut" class="text-center py-5">
-    <h4 class="mb-3">Đăng nhập Google để tiếp tục</h4>
-    <div id="gbtnWrap" class="d-inline-block"></div>
-    <div id="debug" class="small text-danger mt-2"></div>
-  </div>
-
-  <div id="app" class="hidden">
-
-    <section id="section-dashboard">
-      <div class="card p-3 mb-3">
-        <div class="row g-2 align-items-end">
-          <div class="col-12 col-md-2">
-            <label class="form-label mb-0">Tháng</label>
-            <input id="dashMonth" type="number" min="1" max="12" class="form-control" />
-          </div>
-          <div class="col-12 col-md-2">
-            <label class="form-label mb-0">Năm</label>
-            <input id="dashYear" type="number" min="2020" class="form-control" />
-          </div>
-          <div class="col-12 col-md-3">
-            <label class="form-label mb-0">Từ ngày</label>
-            <input id="dashFrom" type="date" class="form-control"/>
-          </div>
-          <div class="col-12 col-md-3">
-            <label class="form-label mb-0">Đến ngày</label>
-            <input id="dashTo" type="date" class="form-control"/>
-          </div>
-          <div class="col-12 col-md-2 d-grid">
-            <button class="btn btn-primary" onclick="loadDashboard()">Xem</button>
-          </div>
-          <div class="col-12"><div class="text-muted small">Nếu chọn khoảng ngày, hệ thống sẽ ưu tiên khoảng ngày. Nếu để trống sẽ dùng Tháng/Năm.</div></div>
-        </div>
-      </div>
-
-      <div id="dashCards" class="row g-3 mb-3"></div>
-
-      <div class="row g-3">
-        <div class="col-md-6">
-          <div class="card p-3">
-            <div class="fw-bold mb-2">Nguồn khách</div>
-            <canvas id="cNguon"></canvas>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card p-3">
-            <div class="fw-bold mb-2">Nhập/Xuất theo ngày</div>
-            <canvas id="cInv"></canvas>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card p-3">
-            <div class="fw-bold mb-2">Thu/Chi</div>
-            <canvas id="cFin"></canvas>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card p-3">
-            <div class="fw-bold mb-2">Top bán chạy</div>
-            <div id="topSell" class="small"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="section-customers" class="hidden">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-3">Thông tin khách hàng</h5>
-
-            <div class="mb-2"><label class="form-label">Tên</label><input id="c_ten" class="form-control"></div>
-            <div class="mb-2"><label class="form-label">Số điện thoại</label><input id="c_phone" class="form-control" onblur="autoSuggestByPhone()" placeholder="0xxx..."></div>
-            <div class="mb-2"><label class="form-label">Ngày</label><input id="c_ngay" type="date" class="form-control"></div>
-            <div class="mb-2"><label class="form-label">Địa chỉ</label><input id="c_diachi" class="form-control"></div>
-
-            <div class="mb-2">
-              <label class="form-label">Nguồn khách</label>
-              <select id="c_nguon" class="form-select" onchange="toggleNguonNote()">
-                <option>Quảng cáo Page</option>
-                <option>Tiktok</option>
-                <option>Hotline</option>
-                <option>Khách ghé ngang cửa hàng</option>
-                <option>Người quen giới thiệu</option>
-                <option>Khách cũ mua lại</option>
-                <option>Người quen nhân viên</option>
-                <option>Khác</option>
-              </select>
-              <input id="c_nguon_note" class="form-control mt-2 d-none" placeholder="Nhập người quen/ghi chú nguồn"/>
-            </div>
-
-            <div class="mb-2">
-              <label class="form-label">Trạng thái mua</label>
-              <select id="c_status" class="form-select" onchange="toggleThamKhao()">
-                <option>Chưa mua</option><option>Đã mua</option>
-              </select>
-            </div>
-
-            <div id="thamKhaoWrap" class="mb-2 d-none">
-              <div class="d-flex align-items-center justify-content-between">
-                <label class="form-label m-0">Mẫu khách đang tham khảo</label>
-                <button class="btn btn-sm btn-outline-primary" onclick="addRowThamKhao()">+ Thêm mẫu</button>
-              </div>
-              <div id="thamKhaoRows" class="mt-2"></div>
-            </div>
-
-            <div class="mb-2"><label class="form-label">Mẫu ghế (nếu đã mua)</label><input id="c_model" class="form-control"></div>
-            <div class="mb-2"><label class="form-label">Giá bán</label><input id="c_gia" type="number" class="form-control"></div>
-            <div class="mb-2"><label class="form-label">Số năm bảo hành</label><input id="c_bhn" type="number" class="form-control" placeholder="mặc định 3"></div>
-
-            <div class="mb-2"><label class="form-label">Nhân viên nhập</label><input id="c_nv" class="form-control" placeholder="Tên nhân viên phụ trách"></div>
-
-            <div class="mb-2"><label class="form-label">Ghi chú</label><textarea id="c_note" class="form-control"></textarea></div>
-            <div class="d-flex gap-2">
-              <button class="btn btn-primary" onclick="saveCustomer()">Lưu</button>
-              <button class="btn btn-outline-secondary" onclick="clearCustomerForm()">Xoá form</button>
-              <button class="btn btn-outline-dark" onclick="exportCsv('customers')">Xuất CSV</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-3">Danh sách khách hàng</h5>
-            <div class="row g-2 mb-2">
-              <div class="col-4"><input id="cl_month" type="number" min="1" max="12" class="form-control" placeholder="Tháng"></div>
-              <div class="col-4"><input id="cl_year" type="number" min="2020" class="form-control" placeholder="Năm"></div>
-              <div class="col-4 d-grid"><button class="btn btn-primary" onclick="loadCustomers()">Tìm kiếm</button></div>
-            </div>
-            <input id="c_search" class="form-control mb-2" placeholder="Tìm theo tên/điện thoại" oninput="filterCustomerList()">
-            <div id="c_list" class="small small-scroll"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="section-cskh" class="hidden">
-      <div class="row g-3">
-        <div class="col-md-7">
-          <div class="card p-3">
-            <h5 class="mb-3">Mục CSKH</h5>
-            <div class="row g-2">
-              <div class="col-md-4"><label class="form-label">Ngày CSKH</label><input id="care_ngay" type="date" class="form-control"></div>
-              <div class="col-md-4"><label class="form-label">customer_id</label><input id="care_customer_id" class="form-control" placeholder="chọn từ Khách hàng"></div>
-              <div class="col-md-4"><label class="form-label">Nhân viên</label><input id="care_nv" class="form-control"></div>
-            </div>
-            <div class="row g-2 mt-1">
-              <div class="col-md-4">
-                <label class="form-label">Kênh</label>
-                <select id="care_kenh" class="form-select" onchange="toggleOutcome()">
-                  <option>Gọi điện</option><option>Nhắn tin</option><option>Gọi điện + Nhắn tin</option><option>Trực tiếp</option>
-                </select>
-              </div>
-              <div class="col-md-8 d-none" id="outcomeWrap">
-                <label class="form-label">Kết quả</label>
-                <select id="care_outcome" class="form-select">
-                  <option>Khách từ chối</option>
-                  <option>Khách tham khảo thêm</option>
-                  <option>Hẹn khách lên cửa hàng</option>
-                  <option>Khách đã mua hãng khác</option>
-                  <option>Khách không nghe máy</option>
-                </select>
-              </div>
-            </div>
-            <div class="row g-2 mt-2">
-              <div class="col-md-6"><input id="care_noi_dung" class="form-control" placeholder="Nội dung"></div>
-              <div class="col-md-6"><input id="care_phan_hoi" class="form-control" placeholder="Phản hồi khách"></div>
-            </div>
-            <input id="care_note" class="form-control mt-2" placeholder="Ghi chú (không bắt buộc)">
-            <div class="mt-2">
-              <label class="me-2">Trạng thái tiềm năng (chọn 1):</label>
-              <div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="care_flag" id="f1"><label class="form-check-label" for="f1">còn tiềm năng</label></div>
-              <div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="care_flag" id="f2"><label class="form-check-label" for="f2">hết tiềm năng</label></div>
-              <div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="care_flag" id="f3"><label class="form-check-label" for="f3">đang nuôi khách</label></div>
-              <div class="form-check form-check-inline"><input class="form-check-input" type="radio" name="care_flag" id="f4"><label class="form-check-label" for="f4">đang hẹn lên</label></div>
-            </div>
-            <div class="mt-2 d-flex gap-2">
-              <button class="btn btn-primary" onclick="saveCSKH()">Lưu CSKH</button>
-              <button class="btn btn-outline-secondary" onclick="clearCSKH()">Xoá nội dung</button>
-            </div>
-          </div>
-        </div>
-
-        <div class="col-md-5">
-          <div class="card p-3">
-            <h5 class="mb-3">Khách đã CSKH gần đây</h5>
-            <input id="cskh_search" class="form-control mb-2" placeholder="Tìm theo tên/điện thoại" oninput="filterCSKHTimeline()">
-            <div id="cskh_recent" class="small small-scroll"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="section-warranty" class="hidden">
-      <div class="card p-3">
-        <div class="row g-2 align-items-end">
-          <div class="col-4"><label class="form-label mb-0">Tháng</label><input id="w_month" type="number" min="1" max="12" class="form-control"></div>
-          <div class="col-4"><label class="form-label mb-0">Năm</label><input id="w_year" type="number" min="2020" class="form-control"></div>
-          <div class="col-4 d-grid"><button class="btn btn-primary" onclick="loadWarranty()">Xem</button></div>
-        </div>
-        <div id="w_list" class="small small-scroll mt-3"></div>
-      </div>
-    </section>
-
-    <section id="section-inventory" class="hidden">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-2">Phiếu Nhập/Xuất</h5>
-            <div class="row g-2">
-              <div class="col-4"><input id="i_ngay" type="date" class="form-control"></div>
-              <div class="col-4"><input id="i_model" class="form-control" placeholder="VD: KY02"></div>
-              <div class="col-4"><select id="i_huong" class="form-select"><option>Nhập</option><option>Xuất</option></select></div>
-            </div>
-            <div class="row g-2 mt-2">
-              <div class="col-4"><input id="i_qty" type="number" min="1" class="form-control" placeholder="Số lượng"></div>
-              <div class="col-4"><input id="i_lydo" class="form-control" placeholder="Lý do"></div>
-              <div class="col-4"><input id="i_nguon" class="form-control" placeholder="Nguồn"></div>
-            </div>
-            <input id="i_ref" class="form-control mt-2" placeholder="Tham chiếu (mã đơn)">
-            <textarea id="i_note" class="form-control mt-2" placeholder="Ghi chú"></textarea>
-            <div class="mt-2 d-flex gap-2"><button class="btn btn-primary" onclick="saveInv()">Lưu</button><button class="btn btn-outline-dark" onclick="exportCsv('inventory_movements')">Xuất CSV</button></div>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-2">Tồn kho hiện tại</h5>
-            <div id="stock" class="small small-scroll"></div>
-            <div class="mt-2"><button class="btn btn-primary" onclick="loadStock()">Tải tồn kho</button></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="section-finance" class="hidden">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-2">Ghi Thu/Chi</h5>
-            <div class="row g-2">
-              <div class="col-4"><input id="f_ngay" type="date" class="form-control"></div>
-              <div class="col-3"><select id="f_loai" class="form-select"><option>Thu</option><option>Chi</option></select></div>
-              <div class="col-5"><input id="f_nhom" class="form-control" placeholder="Nhóm"></div>
-            </div>
-            <div class="row g-2 mt-2">
-              <div class="col-7"><input id="f_noi_dung" class="form-control" placeholder="Nội dung"></div>
-              <div class="col-5"><input id="f_tien" type="number" class="form-control" placeholder="Số tiền (VND)"></div>
-            </div>
-            <div class="row g-2 mt-2">
-              <div class="col-4"><input id="f_pt" class="form-control" placeholder="Phương thức"></div>
-              <div class="col-8"><input id="f_ct" class="form-control" placeholder="Chứng từ (mã/link)"></div>
-            </div>
-            <textarea id="f_note" class="form-control mt-2" placeholder="Ghi chú"></textarea>
-            <div class="mt-2 d-flex gap-2"><button class="btn btn-primary" onclick="saveFinance()">Lưu</button><button class="btn btn-outline-dark" onclick="exportCsv('finance')">Xuất CSV</button></div>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-2">Tổng hợp theo tháng</h5>
-            <div class="row g-2 mb-2">
-              <div class="col-4"><input id="fin_month" type="number" min="1" max="12" class="form-control" placeholder="Tháng"></div>
-              <div class="col-4"><input id="fin_year" type="number" min="2020" class="form-control" placeholder="Năm"></div>
-              <div class="col-4 d-grid"><button class="btn btn-primary" onclick="loadFinance()">Xem</button></div>
-            </div>
-            <div id="fin_summary" class="small"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-    <section id="section-admin" class="hidden">
-      <div class="row g-3">
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-2">Quản lý User</h5>
-            <div class="row g-2">
-              <div class="col-5"><input id="u_email" class="form-control" placeholder="email"></div>
-              <div class="col-3"><input id="u_ten" class="form-control" placeholder="tên"></div>
-              <div class="col-2"><select id="u_role" class="form-select"><option>staff</option><option>admin</option></select></div>
-              <div class="col-2"><select id="u_status" class="form-select"><option>active</option><option>suspended</option></select></div>
-            </div>
-            <div class="mt-2"><button class="btn btn-primary" onclick="saveUser()">Lưu/Upsert</button></div>
-            <div id="users_list" class="small mt-3 small-scroll"></div>
-          </div>
-        </div>
-        <div class="col-md-6">
-          <div class="card p-3">
-            <h5 class="mb-2">Cấu hình & Danh mục</h5>
-            <div class="row g-2">
-              <div class="col-6"><input id="s_min_stock" class="form-control" placeholder="min_stock_threshold"></div>
-              <div class="col-6"><input id="s_dash_month" class="form-control" placeholder="dashboard_month"></div>
-            </div>
-            <div class="mt-2 d-flex gap-2">
-              <button class="btn btn-primary" onclick="saveSetting('min_stock_threshold', document.getElementById('s_min_stock').value)">Lưu ngưỡng tồn</button>
-              <button class="btn btn-primary" onclick="saveSetting('dashboard_month', document.getElementById('s_dash_month').value)">Lưu tháng mặc định</button>
-            </div>
-            <hr/>
-            <div class="row g-2">
-              <div class="col-4"><input id="cat_code" class="form-control" placeholder="model_code"></div>
-              <div class="col-5"><input id="cat_name" class="form-control" placeholder="model_name"></div>
-              <div class="col-3"><input id="cat_bh" class="form-control" placeholder="BH mặc định (năm)"></div>
-            </div>
-            <div class="mt-2"><button class="btn btn-primary" onclick="saveCatalog()">Lưu mẫu ghế</button></div>
-            <div id="catalog_list" class="small mt-3 small-scroll"></div>
-          </div>
-        </div>
-      </div>
-    </section>
-
-  </div>
-</div>
-
-<div class="modal fade" id="viewModal" tabindex="-1">
-  <div class="modal-dialog modal-lg modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Thông tin khách hàng</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <div id="viewContent" class="small"></div>
+  <nav class="navbar klc-navbar navbar-expand-lg">
+    <div class="container-fluid">
+      <a class="navbar-brand fw-bold" href="#">KLC Bến Lức</a>
+      <div class="ms-auto d-flex align-items-center gap-3">
+        <span id="meBox" class="navbar-text small"></span>
       </div>
     </div>
+  </nav>
+
+  <div class="container py-4">
+
+    <!-- Signed-out -->
+    <div id="signedOut" class="text-center py-5">
+      <h4 class="mb-3">Đăng nhập Google để tiếp tục</h4>
+      <div id="gbtnWrap" class="d-inline-block"></div>
+      <div id="debug" class="small text-danger mt-2"></div>
+      <p class="text-muted mt-3">Tài khoản phải có trong sheet <code>users</code> (status=active).</p>
+    </div>
+
+    <!-- App -->
+    <div id="app" class="hidden">
+      <!-- Menu -->
+      <ul class="nav nav-pills mb-3" id="menu">
+        <li class="nav-item"><a class="nav-link active" data-section="dashboard" href="#">Trang chủ</a></li>
+        <li class="nav-item"><a class="nav-link" data-section="customers" href="#">Khách hàng</a></li>
+      </ul>
+
+      <!-- DASHBOARD -->
+      <section id="section-dashboard">
+        <div class="card p-3 mb-3">
+          <div class="row g-2 align-items-end">
+            <div class="col-12 col-md-2">
+              <label class="form-label mb-1">Tháng</label>
+              <input id="dashMonth" type="number" min="1" max="12" class="form-control" />
+            </div>
+            <div class="col-12 col-md-2">
+              <label class="form-label mb-1">Năm</label>
+              <input id="dashYear" type="number" min="2000" max="2100" class="form-control" />
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label mb-1">Từ ngày (dd/MM/yyyy)</label>
+              <input id="fromDate" class="form-control" placeholder="dd/MM/yyyy" />
+            </div>
+            <div class="col-12 col-md-3">
+              <label class="form-label mb-1">Đến ngày (dd/MM/yyyy)</label>
+              <input id="toDate" class="form-control" placeholder="dd/MM/yyyy" />
+            </div>
+            <div class="col-12 col-md-2">
+              <button class="btn btn-klc w-100" id="btnDashLoad">Xem</button>
+            </div>
+          </div>
+          <div class="small mt-2 muted">Ưu tiên lọc theo khoảng <b>Từ ngày</b> – <b>Đến ngày</b> nếu có; nếu để trống sẽ lọc theo Tháng/Năm.</div>
+        </div>
+
+        <div class="row g-3" id="kpiRow">
+          <div class="col-md-3">
+            <div class="card p-3">
+              <div class="muted small">Khách mới</div>
+              <div id="kpiKhachMoi" class="kpi">0</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card p-3">
+              <div class="muted small">Đã mua</div>
+              <div id="kpiDaMua" class="kpi">0</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card p-3">
+              <div class="muted small">Chưa mua</div>
+              <div id="kpiChuaMua" class="kpi">0</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card p-3">
+              <div class="muted small">CSKH (phiên)</div>
+              <div id="kpiCSKH" class="kpi">0</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="row g-3 mt-1">
+          <div class="col-md-6">
+            <div class="card p-3">
+              <div class="fw-bold mb-2">Khách mới theo ngày</div>
+              <canvas id="chartKhachMoi" height="140"></canvas>
+            </div>
+          </div>
+          <div class="col-md-6">
+            <div class="card p-3">
+              <div class="fw-bold mb-2">Thu / Chi theo ngày</div>
+              <canvas id="chartFinance" height="140"></canvas>
+            </div>
+          </div>
+        </div>
+
+        <pre class="mt-3 small text-muted" id="dashRaw"></pre>
+      </section>
+
+      <!-- CUSTOMERS -->
+      <section id="section-customers" class="hidden">
+        <div class="card p-3 mb-3">
+          <div class="row g-2 align-items-end">
+            <div class="col-6 col-md-2">
+              <label class="form-label mb-1">Tháng</label>
+              <input id="cl_month" type="number" min="1" max="12" class="form-control">
+            </div>
+            <div class="col-6 col-md-2">
+              <label class="form-label mb-1">Năm</label>
+              <input id="cl_year" type="number" min="2000" max="2100" class="form-control">
+            </div>
+            <div class="col-12 col-md-6">
+              <label class="form-label mb-1">Tìm theo tên/điện thoại</label>
+              <input id="c_search" class="form-control" placeholder="VD: An / 09xx...">
+            </div>
+            <div class="col-12 col-md-2">
+              <button class="btn btn-klc w-100" id="btnCusLoad">Tìm kiếm</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="card p-3">
+          <div id="c_list" class="small small-scroll"></div>
+        </div>
+      </section>
+    </div>
   </div>
-</div>
 
 <script>
+/* ========= CONFIG ========= */
 const GOOGLE_CLIENT_ID = "229964671691-jvq8pstlajqa9v6g0rhfi0u8ei39453u.apps.googleusercontent.com";
-const WEBAPP_URL = "https://script.google.com/macros/s/AKfycbxscUm2o0q70dsQm3mERQyyZWejd2TmQREfqXZ6qkbQtQYx-OWuB5BDFmBpBJj6_ebw/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxscUm2o0q70dsQm3mERQyyZWejd2TmQREfqXZ6qkbQtQYx-OWuB5BDFmBpBJj6_ebw/exec";
 
-let ID_TOKEN = ""; let ME = null;
+let ID_TOKEN = "";
+let ME = null;
+
+/* ========= HELPERS ========= */
 function dlog(m){ const e=document.getElementById('debug'); if(e) e.textContent=m; console.error(m); }
 function byId(id){ return (document.getElementById(id).value||"").trim(); }
-function fmtDDMM(d){ try{ if(!d) return ""; const x=new Date(d); if(isNaN(x)) return d; const dd=("0"+x.getDate()).slice(-2), mm=("0"+(x.getMonth()+1)).slice(-2), yy=x.getFullYear(); return `${dd}/${mm}/${yy}` }catch(e){return d}}
-function nf(v){ return new Intl.NumberFormat('vi-VN').format(v||0) }
+function pad2(n){ return String(n).padStart(2,'0'); }
+function parseDDMMYYYY(s){
+  if(!s) return null;
+  const [dd,mm,yyyy] = s.split('/').map(x=>parseInt(x,10));
+  if(!dd||!mm||!yyyy) return null;
+  return new Date(yyyy, mm-1, dd);
+}
+function yyyymmdd(d){
+  return d.getFullYear()+"-"+pad2(d.getMonth()+1)+"-"+pad2(d.getDate());
+}
+function inRange(d, fromStr, toStr, month, year){
+  if(!(d instanceof Date)) return false;
+  if (fromStr && toStr){
+    const f = parseDDMMYYYY(fromStr);
+    const t = parseDDMMYYYY(toStr);
+    if(!f || !t) return false;
+    const t1 = new Date(t.getFullYear(), t.getMonth(), t.getDate()+1);
+    return d >= f && d < t1;
+  }
+  if (month && (d.getMonth()+1) !== Number(month)) return false;
+  if (year  && d.getFullYear()  !== Number(year))  return false;
+  return true;
+}
+function decodeB64ToText(b64){
+  const bin = atob(b64);
+  const bytes = Uint8Array.from(bin, ch=>ch.charCodeAt(0));
+  return new TextDecoder('utf-8').decode(bytes);
+}
 
+/* ========= LOGIN ========= */
 window.onload = function(){
   try{
-    if (!window.google || !google.accounts || !google.accounts.id){ dlog('Không tải được Google Sign-In.'); return; }
+    if (!window.google || !google.accounts || !google.accounts.id){
+      dlog('Không tải được Google Sign-In. Kiểm tra mạng/extension chặn script.');
+      return;
+    }
     google.accounts.id.initialize({
       client_id: GOOGLE_CLIENT_ID,
       callback: onCredentialResponse,
-      auto_select:false,
-      ux_mode:'popup',
-      allowed_parent_origin: ['https://dat150802.github.io','https://*.github.io']
+      auto_select: false,
+      cancel_on_tap_outside: true
     });
-    google.accounts.id.renderButton(document.getElementById("gbtnWrap"),{ theme:'outline', size:'large', width:250 });
+    google.accounts.id.renderButton(
+      document.getElementById("gbtnWrap"),
+      { theme: "outline", size: "large", width: 250 }
+    );
   }catch(e){ dlog('Lỗi init GIS: ' + e); }
 };
-function onCredentialResponse(resp){ ID_TOKEN = resp.credential || ""; postLogin(); }
 
-async function callApi(action, payload){
-  const body = { action, payload, id_token: ID_TOKEN };
-  const res  = await fetch(WEBAPP_URL, { method:'POST', headers:{'Content-Type':'text/plain;charset=utf-8'}, body: JSON.stringify(body)});
-  const json = await res.json(); if(!json.ok) throw new Error(json.error||'API_ERROR'); return json.data;
+function onCredentialResponse(resp){
+  ID_TOKEN = resp.credential || "";
+  postLogin();
 }
 
-async function postLogin(){
-  try{
-    const me = await callApi('me', {});
-    ME = me;
-    document.getElementById("signedOut").classList.add("hidden");
-    document.getElementById("app").classList.remove("hidden");
-    document.getElementById("meBox").textContent = `${me.email} (${me.role})`;
-    if ((me.role||"staff")==="admin") document.getElementById("adminTab").classList.remove("d-none");
-
-    const now = new Date();
-    document.getElementById("dashMonth").value = now.getMonth()+1;
-    document.getElementById("dashYear").value  = now.getFullYear();
-    document.getElementById("cl_month").value  = now.getMonth()+1;
-    document.getElementById("cl_year").value   = now.getFullYear();
-    document.getElementById("w_month").value   = now.getMonth()+1;
-    document.getElementById("w_year").value    = now.getFullYear();
-    document.getElementById("fin_month").value = now.getMonth()+1;
-    document.getElementById("fin_year").value  = now.getFullYear();
-
-    bindMenu();
-    loadDashboard(); loadUsers(); loadCatalog();
-  }catch(err){ dlog('Không có quyền hoặc token lỗi: '+err.message); }
+async function callApi(action, payload){
+  const res = await fetch(WEB_APP_URL, {
+    method: "POST",
+    headers: {"Content-Type":"application/json"},
+    body: JSON.stringify({ action, payload, id_token: ID_TOKEN })
+  });
+  const j = await res.json();
+  if (!j.ok) throw new Error(j.error||'API_ERROR');
+  return j.data;
 }
 
 function bindMenu(){
-  document.querySelectorAll('#topmenu .nav-link').forEach(a=>{
+  document.querySelectorAll('#menu .nav-link').forEach(a=>{
     a.onclick = (e)=>{
       e.preventDefault();
-      document.querySelectorAll('#topmenu .nav-link').forEach(x=>x.classList.remove('active'));
+      document.querySelectorAll('#menu .nav-link').forEach(x=>x.classList.remove('active'));
       a.classList.add('active');
       const sec = a.getAttribute('data-section');
       document.querySelectorAll('section[id^="section-"]').forEach(s=>s.classList.add('hidden'));
@@ -430,266 +251,178 @@ function bindMenu(){
   });
 }
 
-let chartNguon=null, chartInv=null, chartFin=null;
+/* ========= AFTER LOGIN ========= */
+async function postLogin(){
+  try{
+    // gọi API đơn giản để xác thực và lấy role (nếu back-end hỗ trợ)
+    try{
+      const me = await callApi("me", {});
+      ME = me;
+      document.getElementById("meBox").textContent = (me && me.email) ? (me.email + (me.role? " ("+me.role+")": "")) : "";
+    }catch(_){ /* nếu BE không có 'me' thì vẫn tiếp tục */}
+
+    document.getElementById("signedOut").classList.add("hidden");
+    document.getElementById("app").classList.remove("hidden");
+
+    // defaults
+    const now = new Date();
+    document.getElementById("dashMonth").value = now.getMonth()+1;
+    document.getElementById("dashYear").value  = now.getFullYear();
+    document.getElementById("cl_month").value  = now.getMonth()+1;
+    document.getElementById("cl_year").value   = now.getFullYear();
+
+    bindMenu();
+    document.getElementById("btnDashLoad").onclick = loadDashboard;
+    document.getElementById("btnCusLoad").onclick  = loadCustomers;
+
+    await loadDashboard();
+  }catch(e){
+    alert("Đăng nhập thất bại: " + e.message);
+  }
+}
+
+/* ========= EXPORT CSV HELPERS ========= */
+async function getCsv(sheet){
+  const r = await callApi("export.csv", {sheet});
+  const txt = decodeB64ToText(r.base64 || "");
+  // parse via Papa
+  const parsed = Papa.parse(txt, {header:true, skipEmptyLines:true});
+  return parsed.data || [];
+}
+
+/* ========= DASHBOARD ========= */
+let chartKM = null, chartFin = null;
+
 async function loadDashboard(){
-  const m = Number(byId('dashMonth')||0);
-  const y = Number(byId('dashYear')||0);
-  const from = byId('dashFrom') ? fmtDDMM(byId('dashFrom')) : '';
-  const to   = byId('dashTo')   ? fmtDDMM(byId('dashTo'))   : '';
-  const d = await callApi("dashboard", {month:m, year:y, from, to});
-
-  const cards=[];
-  cards.push(cardKPI("Khách mới", d.khachHangMoi));
-  cards.push(cardKPI("Đã mua", d.daMua) + cardKPI("Chưa mua", d.chuaMua));
-  cards.push(cardKPI("CSKH (phiên)", d.soPhienCSKH) + cardKPI("Tỉ lệ có ghi chú", Math.round((d.tiLeNext*100)||0)+"%"));
-  cards.push(cardKPI("Bảo dưỡng: Đến kỳ", d.baoDuong.denKy) + cardKPI("Đã xử lý", d.baoDuong.daXL) + cardKPI("Quá hạn", d.baoDuong.quaHan));
-  document.getElementById('dashCards').innerHTML = cards.join('');
-
-  const labelsNguon = Object.keys(d.topNguon||{});
-  const dataNguon = labelsNguon.map(k=>d.topNguon[k]);
-  chartNguon && chartNguon.destroy();
-  chartNguon = new Chart(document.getElementById('cNguon'), {type:'doughnut', data:{labels:labelsNguon, datasets:[{data:dataNguon}]}});
-
-  const days = Object.keys(d.invByDay||{}).sort();
-  const nhap = days.map(k=> (d.invByDay[k]?.Nhap)||0);
-  const xuat = days.map(k=> (d.invByDay[k]?.Xuat)||0);
-  chartInv && chartInv.destroy();
-  chartInv = new Chart(document.getElementById('cInv'), {type:'line', data:{labels:days, datasets:[{label:'Nhập',data:nhap},{label:'Xuất',data:xuat}]}});
-
-  const finDays = Object.keys(d.finance?.byDay||{}).sort();
-  const thu = finDays.map(k=> d.finance.byDay[k]?.Thu||0);
-  const chi = finDays.map(k=> d.finance.byDay[k]?.Chi||0);
-  chartFin && chartFin.destroy();
-  chartFin = new Chart(document.getElementById('cFin'), {type:'bar', data:{labels:finDays, datasets:[{label:'Thu',data:thu},{label:'Chi',data:chi}]}});
-
-  document.getElementById('topSell').innerHTML = (d.topSell||[]).map(x=>`${x.model}: <b>${x.qty}</b>`).join('<br>');
-}
-function cardKPI(label,val){ return `<div class="col-md-3"><div class="card p-3"><div class="small text-muted">${label}</div><div class="fs-3 fw-bold">${val}</div></div></div>`; }
-
-function toggleNguonNote(){
-  const v = byId('c_nguon');
-  const need = ['Người quen giới thiệu','Khách cũ mua lại','Người quen nhân viên','Khác'];
-  document.getElementById('c_nguon_note').classList.toggle('d-none', !need.includes(v));
-}
-function toggleThamKhao(){ document.getElementById('thamKhaoWrap').classList.toggle('d-none', byId('c_status')!=='Chưa mua'); }
-function addRowThamKhao(){
-  const wrap = document.getElementById('thamKhaoRows');
-  const id = 'r'+Math.random().toString(36).slice(2,7);
-  const row = document.createElement('div');
-  row.className='row g-2 mb-1'; row.id=id;
-  row.innerHTML = `
-    <div class="col-4"><input class="form-control tk_model" placeholder="Mẫu (VD: KY02)"></div>
-    <div class="col-4"><input class="form-control tk_gia" type="number" placeholder="Giá tham khảo"></div>
-    <div class="col-3"><input class="form-control tk_bh" type="number" placeholder="BH (năm)"></div>
-    <div class="col-1 d-grid"><button class="btn btn-outline-danger" onclick="document.getElementById('${id}').remove()">X</button></div>`;
-  wrap.appendChild(row);
-}
-function collectThamKhao(){
-  const rows = Array.from(document.querySelectorAll('#thamKhaoRows .row'));
-  const list = rows.map(r=>{
-    const m = r.querySelector('.tk_model')?.value||'';
-    const g = r.querySelector('.tk_gia')?.value||'';
-    const b = r.querySelector('.tk_bh')?.value||'';
-    return m? `${m}|${g}|${b}`:'';
-  }).filter(Boolean);
-  return list.join('; ');
-}
-function clearCustomerForm(){
-  ['c_ten','c_phone','c_ngay','c_diachi','c_model','c_gia','c_bhn','c_note','c_nguon_note','c_nv'].forEach(id=>document.getElementById(id).value="");
-  document.getElementById('c_nguon').value='Quảng cáo Page';
-  document.getElementById('c_status').value='Chưa mua';
-  document.getElementById('thamKhaoRows').innerHTML="";
-  document.getElementById('thamKhaoWrap').classList.add('d-none');
-  document.getElementById('c_nguon_note').classList.add('d-none');
-}
-async function saveCustomer(){
   try{
-    const ngay = byId('c_ngay') ? fmtDDMM(byId('c_ngay')) : '';
-    let note = byId('c_note'); const nv = byId('c_nv'); if (nv) note = `NV:${nv} | ` + note;
-    const nguon = byId('c_nguon'); const nguon_note = byId('c_nguon_note'); if (nguon_note) note += ` | Nguon:${nguon} ${nguon_note}`;
-    if (byId('c_status')==='Chưa mua'){ const tk = collectThamKhao(); if (tk) note += ` | THAMKHAO:[${tk}]`; }
-    const p = {ten:byId('c_ten'), so_dien_thoai:byId('c_phone'), ngay, dia_chi:byId('c_diachi'),
-      nguon_khach:nguon, trang_thai_mua:byId('c_status'),
-      mau_ghe:byId('c_model'), gia_ban:Number(byId('c_gia')||0), so_nam_bao_hanh:Number(byId('c_bhn')||0), ghi_chu:note};
-    const r = await callApi('customer.create', p); alert('Đã lưu khách: ' + r.id);
-    clearCustomerForm(); loadCustomers();
-  }catch(e){ alert('Lỗi: ' + e.message); }
+    const m = Number(document.getElementById("dashMonth").value || 0);
+    const y = Number(document.getElementById("dashYear").value  || 0);
+    const f = byId("fromDate");
+    const t = byId("toDate");
+
+    // lấy dữ liệu thô
+    const [customers, cskh, finance] = await Promise.all([
+      getCsv("customers"),
+      getCsv("cskh"),
+      getCsv("finance"),
+    ]);
+
+    // lọc theo thời gian
+    const toDateObj = s => (s ? parseDDMMYYYY(s) : null);
+    const toDateField = v => (v instanceof Date ? v : (v && v.includes('/') ? parseDDMMYYYY(v) : (v ? new Date(v) : null)));
+
+    const cusFiltered = customers.filter(row => {
+      const d = toDateField(row.ngay);
+      return d && inRange(d, f, t, m, y);
+    });
+
+    const cskhFiltered = cskh.filter(row => {
+      const d = toDateField(row.ngay);
+      return d && inRange(d, f, t, m, y);
+    });
+
+    const finFiltered = finance.filter(row => {
+      const d = toDateField(row.ngay);
+      return d && inRange(d, f, t, m, y);
+    });
+
+    // KPI
+    const khachMoi = cusFiltered.length;
+    const daMua = cusFiltered.reduce((acc, r)=> acc + (String(r.trang_thai_mua)==='Đã mua' ? 1:0), 0);
+    const chuaMua = khachMoi - daMua;
+    const soPhienCSKH = cskhFiltered.length;
+
+    document.getElementById("kpiKhachMoi").textContent = khachMoi;
+    document.getElementById("kpiDaMua").textContent   = daMua;
+    document.getElementById("kpiChuaMua").textContent = chuaMua;
+    document.getElementById("kpiCSKH").textContent    = soPhienCSKH;
+
+    // Biểu đồ Khách mới theo ngày
+    const kmByDay = {};
+    cusFiltered.forEach(r=>{
+      const d = toDateField(r.ngay);
+      const key = yyyymmdd(d);
+      kmByDay[key] = (kmByDay[key]||0)+1;
+    });
+    const kmLabels = Object.keys(kmByDay).sort();
+    const kmData   = kmLabels.map(k=>kmByDay[k]);
+
+    if (chartKM) chartKM.destroy();
+    chartKM = new Chart(document.getElementById('chartKhachMoi'), {
+      type: 'bar',
+      data: { labels: kmLabels, datasets: [{ label: 'Khách mới', data: kmData }]},
+      options: { responsive:true, maintainAspectRatio:false, plugins:{legend:{display:false}}, scales:{x:{ticks:{maxRotation:0}}} }
+    });
+
+    // Biểu đồ Thu/Chi theo ngày
+    const finByDay = {};
+    finFiltered.forEach(r=>{
+      const d = toDateField(r.ngay);
+      const key = yyyymmdd(d);
+      if(!finByDay[key]) finByDay[key] = {Thu:0, Chi:0};
+      const v = Number(r.so_tien||0);
+      const loai = String(r.loai||"");
+      if (loai==="Thu") finByDay[key].Thu += v; else finByDay[key].Chi += v;
+    });
+    const fLabels = Object.keys(finByDay).sort();
+    const fThu = fLabels.map(k=>finByDay[k].Thu);
+    const fChi = fLabels.map(k=>finByDay[k].Chi);
+
+    if (chartFin) chartFin.destroy();
+    chartFin = new Chart(document.getElementById('chartFinance'), {
+      type: 'line',
+      data: { labels: fLabels, datasets: [
+        { label:'Thu', data: fThu, tension:0.2 },
+        { label:'Chi', data: fChi, tension:0.2 },
+      ]},
+      options: { responsive:true, maintainAspectRatio:false, scales:{x:{ticks:{maxRotation:0}}} }
+    });
+
+    // Raw debug
+    const rawBox = document.getElementById("dashRaw");
+    rawBox.textContent = JSON.stringify({ filters:{month:m,year:y,from:f,to:t}, counts:{
+      customers: cusFiltered.length, cskh: cskhFiltered.length, finance: finFiltered.length
+    }}, null, 2);
+  }catch(e){
+    alert("Lỗi tải Trang chủ: " + e.message);
+  }
 }
+
+/* ========= CUSTOMERS ========= */
 async function loadCustomers(){
-  const month=Number(byId('cl_month')||0), year=Number(byId('cl_year')||0);
-  const list=await callApi('customer.list',{month,year}); window._CUSTOMERS=list; renderCustomerList(list);
-}
-function filterCustomerList(){
-  const q=(byId('c_search')||'').toLowerCase();
-  const list=(window._CUSTOMERS||[]).filter(x=> String(x.ten||"").toLowerCase().includes(q) || String(x.so_dien_thoai||"").includes(q) );
-  renderCustomerList(list);
-}
-function renderCustomerList(list){
-  const html = list.map(x=>{
-    const btnCS = `<button class="btn btn-sm btn-outline-secondary" onclick="prefillCSKH('${x.customer_id}','${(x.ten||"").replace(/'/g,"\\'")}','${x.so_dien_thoai||""}')">Chuyển Sang CSKH</button>`;
-    const btnView = `<button class="btn btn-sm btn-outline-primary ms-1" onclick="viewCustomer('${x.customer_id}')">Xem thông tin</button>`;
-    const ngay = (x.ngay && typeof x.ngay!=='string') ? fmtDDMM(x.ngay) : (x.ngay||'');
-    return `<div class="border rounded p-2 mb-2">
-      <div class="d-flex justify-content-between">
-        <div><b>${x.ten||"-"}</b> • ${x.so_dien_thoai||"-"} • ${x.nguon_khach||"-"} • ${x.trang_thai_mua||"-"} • ${x.mau_ghe||""}</div>
-        <div class="small text-muted">${ngay}</div>
-      </div>
-      <div class="mt-1">${x.dia_chi||""}</div>
-      <div class="mt-1">${btnCS} ${btnView}</div>
-    </div>`;
-  }).join("");
-  document.getElementById("c_list").innerHTML = html || "<div class='text-muted'>Không có dữ liệu</div>";
-}
-function prefillCSKH(cid,name,phone){
-  document.querySelector('#topmenu [data-section="cskh"]').click();
-  document.getElementById("care_customer_id").value=cid;
-  document.getElementById("care_noi_dung").value="CSKH khách "+name+" ("+phone+")";
-}
-async function viewCustomer(cid){
   try{
-    const list = window._CUSTOMERS||[];
-    const c = list.find(x=>String(x.customer_id)===String(cid));
-    const care = await callApi('cskh.byCustomer',{customer_id:cid});
-    let html = `<div><b>${c?.ten||''}</b> • ${c?.so_dien_thoai||''}</div>
-      <div>${c?.dia_chi||''}</div>
-      <div>Nguồn: ${c?.nguon_khach||''} • Trạng thái: ${c?.trang_thai_mua||''} • Mẫu: ${c?.mau_ghe||''}</div>
-      <hr><div class="fw-bold">Lịch sử CSKH</div>`;
-    html += (care||[]).map(r=>{
-      const ngay = (r.ngay && typeof r.ngay!=='string')? fmtDDMM(r.ngay) : (r.ngay||''); 
+    const m = Number(document.getElementById("cl_month").value || 0);
+    const y = Number(document.getElementById("cl_year").value  || 0);
+    const q = (document.getElementById("c_search").value||"").trim().toLowerCase();
+
+    const rows = await getCsv("customers");
+    // lọc theo tháng/năm chính xác ở client
+    const filtered = rows.filter(r=>{
+      const d = r.ngay && r.ngay.includes('/') ? parseDDMMYYYY(r.ngay) : (r.ngay ? new Date(r.ngay) : null);
+      if(!d) return false;
+      if (m && (d.getMonth()+1)!==m) return false;
+      if (y && d.getFullYear() !== y) return false;
+      const name = String(r.ten||"").toLowerCase();
+      const phone = String(r.so_dien_thoai||"");
+      if (!q) return true;
+      return name.includes(q) || phone.includes(q);
+    });
+
+    const html = filtered.map(x=>{
       return `<div class="border rounded p-2 mb-2">
-        <div class="small text-muted">${ngay} • ${r.kenh||''}</div>
-        <div><b>${r.noi_dung_cskh||''}</b></div>
-        <div>${r.phan_hoi_khach||''}</div>
+        <div class="d-flex justify-content-between">
+          <div><b>${x.ten||"-"}</b> • ${x.so_dien_thoai||"-"} • ${x.nguon_khach||"-"} • ${x.trang_thai_mua||"-"} • ${x.mau_ghe||""}</div>
+          <div class="small text-muted">${x.ngay||""}</div>
+        </div>
+        <div class="mt-1">${x.dia_chi||""}</div>
       </div>`;
-    }).join('');
-    document.getElementById('viewContent').innerHTML=html;
-    new bootstrap.Modal('#viewModal').show();
-  }catch(e){ alert('Không tải được thông tin: '+e.message); }
+    }).join("");
+    document.getElementById("c_list").innerHTML = html || "<div class='text-muted'>Không có dữ liệu</div>";
+  }catch(e){
+    alert("Lỗi tải Khách hàng: " + e.message);
+  }
 }
 
-function toggleOutcome(){
-  const v = byId('care_kenh');
-  const show = (v==='Gọi điện' || v==='Gọi điện + Nhắn tin');
-  document.getElementById('outcomeWrap').classList.toggle('d-none', !show);
-}
-function clearCSKH(){
-  ['care_ngay','care_customer_id','care_nv','care_noi_dung','care_phan_hoi','care_note'].forEach(id=>{ const el=document.getElementById(id); if(el){ el.value=""; } });
-  ['f1','f2','f3','f4'].forEach(id=>{ const el=document.getElementById(id); if(el) el.checked=false; });
-  document.getElementById('care_kenh').value='Gọi điện'; toggleOutcome();
-}
-async function saveCSKH(){
-  try{
-    const flags={con_tiem_nang:false,het_tiem_nang:false,dang_nuoi_khach:false,dang_hen_len:false};
-    const map={f1:"con_tiem_nang",f2:"het_tiem_nang",f3:"dang_nuoi_khach",f4:"dang_hen_len"}; let picked=0;
-    Object.keys(map).forEach(id=>{ if(document.getElementById(id).checked){ flags[map[id]]=true; picked++; } });
-    if(picked!==1){ alert("Chọn đúng 1 trạng thái tiềm năng."); return; }
-    const ngay = byId('care_ngay') ? fmtDDMM(byId('care_ngay')) : '';
-    let noi_dung = byId('care_noi_dung');
-    const outcomeWrap = !document.getElementById('outcomeWrap').classList.contains('d-none');
-    if(outcomeWrap){ noi_dung = `[${byId('care_outcome')}] ` + noi_dung; }
-    const note = byId('care_note'); if(note){ noi_dung += ` | Note: ${note}`; }
-    const p={ngay, customer_id:byId('care_customer_id'), nhan_vien:byId('care_nv'),
-      noi_dung_cskh:noi_dung, phan_hoi_khach:byId('care_phan_hoi'), kenh:byId('care_kenh'),
-      next_action_date:'', ...flags };
-    const r = await callApi('cskh.create',p);
-    alert('Đã lưu CSKH: '+r.id); clearCSKH(); refreshCSKHTimeline();
-  }catch(e){ alert('Lỗi CSKH: '+e.message); }
-}
-async function refreshCSKHTimeline(){
-  try{
-    const month = Number(byId('cl_month')||new Date().getMonth()+1);
-    const year  = Number(byId('cl_year')||new Date().getFullYear());
-    const list=await callApi('customer.list',{month,year}); window._CUSTOMERS=list;
-    const html=list.slice(-20).reverse().map(x=>{
-      return `<div class="border rounded p-2 mb-2"><div><b>${x.ten||''}</b> • ${x.so_dien_thoai||''}</div>
-        <div class="small text-muted">Kênh: ${x.nguon_khach||''}</div>
-        <button class="btn btn-sm btn-outline-primary mt-1" onclick="prefillCSKH('${x.customer_id}','${(x.ten||'').replace(/'/g,'\\\'')}','${x.so_dien_thoai||''}')">CSKH lại</button></div>`;
-    }).join('');
-    document.getElementById('cskh_recent').innerHTML = html||'—';
-  }catch(e){ document.getElementById('cskh_recent').innerHTML='—' }
-}
-function filterCSKHTimeline(){
-  const q=(byId('cskh_search')||'').toLowerCase();
-  const list=(window._CUSTOMERS||[]).filter(x=> String(x.ten||"").toLowerCase().includes(q) || String(x.so_dien_thoai||"").includes(q) );
-  const html=list.slice(0,20).map(x=>{
-    return `<div class="border rounded p-2 mb-2">
-      <div><b>${x.ten||''}</b> • ${x.so_dien_thoai||''}</div>
-      <div class="small text-muted">Kênh: ${x.nguon_khach||''}</div>
-      <button class="btn btn-sm btn-outline-primary mt-1" onclick="prefillCSKH('${x.customer_id}','${(x.ten||'').replace(/'/g,'\\\'')}','${x.so_dien_thoai||''}')">CSKH lại</button>
-    </div>`;
-  }).join('');
-  document.getElementById('cskh_recent').innerHTML = html||'—';
-}
-
-async function loadWarranty(){
-  const month=Number(byId('w_month')||0), year=Number(byId('w_year')||0);
-  const list=await callApi('warranty.byMonth',{month,year});
-  const html=list.map(w=>{
-    const due = (w.ngay_du_kien && typeof w.ngay_du_kien!=='string')? fmtDDMM(w.ngay_du_kien): (w.ngay_du_kien||'');
-    const handledBtn=(String(w.trang_thai)==="Đến kỳ")? `<button class="btn btn-sm btn-outline-success" onclick="markWS('${w.ws_id}')">Đánh dấu đã xử lý</button>` : "";
-    return `<div class="border rounded p-2 mb-2">
-      <div><b>${w.customer_id}</b> • ${w.mau_ghe||""} • ${w.loai}</div>
-      <div class="small text-muted">Trạng thái: ${w.trang_thai||""} • Dự kiến: ${due}</div>
-      <div class="mt-1">${handledBtn}</div>
-    </div>`;
-  }).join("");
-  document.getElementById("w_list").innerHTML = html || "<div class='text-muted'>Không có lịch trong tháng</div>";
-}
-async function markWS(id){ try{ await callApi('warranty.markHandled',{ws_id:id}); loadWarranty(); } catch(e){ alert('Không cập nhật được: ' + e.message); } }
-
-async function saveInv(){
-  const p={ ngay: byId('i_ngay')?fmtDDMM(byId('i_ngay')):'', mau_ghe:byId('i_model'), huong:byId('i_huong'),
-            so_luong:Number(byId('i_qty')||0), ly_do:byId('i_lydo'), nguon_nhap_xuat:byId('i_nguon'),
-            tham_chieu:byId('i_ref'), ghi_chu:byId('i_note') };
-  try{ const r=await callApi('inv.create',p); alert('Đã ghi phiếu: ' + r.id); loadStock(); }
-  catch(e){ alert('Lỗi nhập/xuất: ' + e.message); }
-}
-async function loadStock(){
-  const rows=await callApi('inv.stockView',{});
-  const html=rows.map(x=>`<div class="border rounded p-2 mb-2"><b>${x.mau_ghe}</b> — tồn: ${x.ton_cuoi} (đầu: ${x.ton_dau}, nhập: ${x.nhap}, xuất: ${x.xuat})</div>`).join("");
-  document.getElementById('stock').innerHTML = html || "<div class='text-muted'>Chưa có</div>";
-}
-
-async function saveFinance(){
-  const p={ ngay:byId('f_ngay')?fmtDDMM(byId('f_ngay')):'', loai:byId('f_loai'), nhom:byId('f_nhom'), noi_dung:byId('f_noi_dung'),
-            so_tien:Number(byId('f_tien')||0), phuong_thuc:byId('f_pt'), chung_tu:byId('f_ct'), ghi_chu:byId('f_note') };
-  try{ await callApi('fin.create',p); alert('Đã ghi Thu/Chi'); loadFinance(); }
-  catch(e){ alert('Lỗi Thu/Chi: ' + e.message); }
-}
-async function loadFinance(){
-  const m=Number(byId('fin_month')||0), y=Number(byId('fin_year')||0);
-  const r=await callApi('fin.monthly',{month:m,year:y});
-  document.getElementById('fin_summary').innerHTML = `<div>Tổng Thu: <b>${nf(r.sumThu)}</b></div><div>Tổng Chi: <b>${nf(r.sumChi)}</b></div><div>Lợi nhuận gộp: <b>${nf(r.loiNhuan)}</b></div>`;
-}
-
-async function saveUser(){ const p={email:byId('u_email'),ten:byId('u_ten'),role:byId('u_role'),status:byId('u_status')};
-  try{ await callApi('admin.users.upsert',p); alert('Đã lưu user'); loadUsers(); } catch(e){ alert('Lỗi user: '+e.message); } }
-async function loadUsers(){
-  try{
-    const r=await callApi('admin.users.get',{}); const iEmail=r.headers.indexOf('email');
-    const list=r.rows.map(row=>`<div class="border rounded p-2 mb-2">${row[iEmail]} — ${row.join(' | ')}</div>`).join('');
-    document.getElementById('users_list').innerHTML=list||'—';
-  }catch(e){}
-}
-async function saveSetting(k,v){ try{ await callApi('admin.settings.set',{key:k,value:v}); alert('Đã lưu setting: '+k); } catch(e){ alert('Lỗi setting: '+e.message);} }
-async function saveCatalog(){
-  try{ await callApi('admin.catalog.upsert',{ model_code:byId('cat_code'), model_name:byId('cat_name'), bao_hanh_mac_dinh_nam:Number(byId('cat_bh')||3)}); alert('Đã lưu mẫu ghế'); loadCatalog(); }
-  catch(e){ alert('Lỗi catalog: '+e.message); }
-}
-async function loadCatalog(){
-  try{
-    const r=await callApi('admin.catalog.get',{}); const iCode=r.headers.indexOf('model_code'), iName=r.headers.indexOf('model_name'), iBH=r.headers.indexOf('bao_hanh_mac_dinh_nam');
-    const list=r.rows.map(row=>`<div class="border rounded p-2 mb-2"><b>${row[iCode]}</b> — ${row[iName]} — BH ${row[iBH]} năm</div>`).join('');
-    document.getElementById('catalog_list').innerHTML=list||'—';
-  }catch(e){}
-}
-
-async function exportCsv(sheet){
-  try{
-    const r=await callApi('export.csv',{sheet});
-    const a=document.createElement('a'); a.href='data:text/csv;base64,'+r.base64; a.download=r.filename; document.body.appendChild(a); a.click(); a.remove();
-  }catch(e){ alert('Không xuất được CSV: '+e.message); }
-}
 </script>
 </body>
 </html>
