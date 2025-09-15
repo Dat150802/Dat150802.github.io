@@ -3,7 +3,7 @@
 
 /** CONFIG – cập nhật 2 dòng dưới cho đúng env của bạn */
 const GOOGLE_CLIENT_ID = "229964671691-jvq8pstlajqa9v6g0rhfi0u8ei39453u.apps.googleusercontent.com";
-const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbxscUMFNROq3cdfug62G6_T0trnHZYePbhyRn3iEMO6GDYqpVQanJkq8rRdBPv_3Hsn/exec";
+const WEB_APP_URL = "https://script.google.com/macros/s/AKfycbx9MFNR0qc3udfgcG26_T0rtnHZYePBhyRn3iEM06GDYqp4VQanJkq8rRdBPzV_3Hsn/exec";
 
 /** MOCK (để test UI nếu backend chưa sẵn) */
 const USE_MOCK = false;
