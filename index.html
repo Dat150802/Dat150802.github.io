@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="vi">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Portal Nội Bộ</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link
+      href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap"
+      rel="stylesheet"
+    />
+    <link rel="stylesheet" href="assets/css/style.css" />
+  </head>
+  <body>
+    <header class="hero">
+      <div class="container hero__content">
+        <div>
+          <p class="eyebrow">Chào mừng bạn trở lại</p>
+          <h1>Trang thông tin nội bộ</h1>
+          <p class="lead">
+            Cập nhật nhanh chóng các thông báo, sự kiện và tài nguyên dành riêng
+            cho nhân viên công ty.
+          </p>
+          <div class="hero__actions">
+            <a class="btn btn--primary" href="#announcements">Xem thông báo</a>
+            <a class="btn" href="#resources">Tài nguyên</a>
+          </div>
+        </div>
+        <div class="hero__illustration" aria-hidden="true">
+          <div class="hero__card">
+            <p class="hero__card-title">Lịch họp hôm nay</p>
+            <ul>
+              <li>09:00 - Họp phòng Kinh doanh</li>
+              <li>11:00 - Đào tạo sản phẩm mới</li>
+              <li>15:00 - Sync dự án A</li>
+            </ul>
+          </div>
+          <div class="hero__card hero__card--secondary">
+            <p class="hero__card-title">Sinh nhật trong tuần</p>
+            <ul>
+              <li>Trần Minh - 12/06</li>
+              <li>Nguyễn Hoa - 14/06</li>
+            </ul>
+          </div>
+        </div>
+      </div>
+    </header>
+
+    <nav class="subnav" aria-label="Điều hướng phụ">
+      <div class="container subnav__content">
+        <button class="subnav__toggle" aria-expanded="false" aria-controls="subnav-links">
+          Menu
+        </button>
+        <ul class="subnav__links" id="subnav-links">
+          <li><a href="#announcements">Thông báo</a></li>
+          <li><a href="#departments">Phòng ban</a></li>
+          <li><a href="#resources">Tài nguyên</a></li>
+          <li><a href="#contact">Hỗ trợ</a></li>
+        </ul>
+        <button class="theme-switch" aria-label="Chuyển chế độ sáng/tối">
+          <span class="theme-switch__icon" aria-hidden="true">🌗</span>
+          <span class="theme-switch__label">Chế độ tối</span>
+        </button>
+      </div>
+    </nav>
+
+    <main>
+      <section class="section" id="announcements">
+        <div class="container">
+          <div class="section__header">
+            <h2>Thông báo mới nhất</h2>
+            <a class="link" href="#">Xem tất cả</a>
+          </div>
+          <div class="grid grid--announcements">
+            <article class="card">
+              <p class="card__eyebrow">10/06/2024</p>
+              <h3>Khởi động chiến dịch quý III</h3>
+              <p>
+                Toàn bộ phòng ban chuẩn bị kế hoạch chi tiết trước ngày 20/06.
+                Các nhóm trưởng gửi tài liệu về phòng Chiến lược để tổng hợp.
+              </p>
+              <a class="link" href="#">Xem chi tiết</a>
+            </article>
+            <article class="card">
+              <p class="card__eyebrow">08/06/2024</p>
+              <h3>Cập nhật chính sách làm việc linh hoạt</h3>
+              <p>
+                Chính sách mới áp dụng từ tháng 7 với tùy chọn làm việc từ xa 2
+                ngày/tuần. Đăng ký với quản lý trực tiếp trước ngày 25/06.
+              </p>
+              <a class="link" href="#">Tải tài liệu</a>
+            </article>
+            <article class="card">
+              <p class="card__eyebrow">05/06/2024</p>
+              <h3>Chương trình đào tạo kỹ năng lãnh đạo</h3>
+              <p>
+                Dành cho nhân viên cấp trưởng nhóm trở lên. Vui lòng hoàn thành
+                đăng ký tham gia trước ngày 18/06.
+              </p>
+              <a class="link" href="#">Đăng ký ngay</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--alt" id="departments">
+        <div class="container">
+          <div class="section__header">
+            <h2>Liên hệ phòng ban</h2>
+            <p class="section__subtitle">
+              Tìm thông tin liên lạc nhanh cho các phòng ban hỗ trợ.
+            </p>
+          </div>
+          <div class="grid grid--departments">
+            <article class="card card--compact">
+              <h3>Nhân sự (HR)</h3>
+              <p>Email: hr@company.vn</p>
+              <p>Hotline: 0987 123 456</p>
+            </article>
+            <article class="card card--compact">
+              <h3>Công nghệ (IT)</h3>
+              <p>Email: it-help@company.vn</p>
+              <p>Hotline: 0987 654 321</p>
+            </article>
+            <article class="card card--compact">
+              <h3>Tài chính (Finance)</h3>
+              <p>Email: finance@company.vn</p>
+              <p>Hotline: 0901 222 333</p>
+            </article>
+            <article class="card card--compact">
+              <h3>Marketing</h3>
+              <p>Email: marketing@company.vn</p>
+              <p>Hotline: 0902 444 555</p>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section" id="resources">
+        <div class="container">
+          <div class="section__header">
+            <h2>Tài nguyên nhanh</h2>
+            <p class="section__subtitle">
+              Các công cụ và biểu mẫu thường dùng hằng ngày.
+            </p>
+          </div>
+          <div class="grid grid--resources">
+            <article class="resource">
+              <div class="resource__icon" aria-hidden="true">🗓️</div>
+              <div>
+                <h3>Đặt lịch phòng họp</h3>
+                <p>Kiểm tra lịch trống và đặt phòng họp trong vài giây.</p>
+              </div>
+              <a class="btn btn--ghost" href="#">Mở ứng dụng</a>
+            </article>
+            <article class="resource">
+              <div class="resource__icon" aria-hidden="true">🧾</div>
+              <div>
+                <h3>Yêu cầu mua sắm</h3>
+                <p>Điền form mua sắm trang thiết bị cho nhóm bạn.</p>
+              </div>
+              <a class="btn btn--ghost" href="#">Gửi yêu cầu</a>
+            </article>
+            <article class="resource">
+              <div class="resource__icon" aria-hidden="true">📚</div>
+              <div>
+                <h3>Thư viện tài liệu</h3>
+                <p>Tổng hợp tài liệu nội bộ, chính sách và quy trình chuẩn.</p>
+              </div>
+              <a class="btn btn--ghost" href="#">Xem tài liệu</a>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section class="section section--alt" id="contact">
+        <div class="container contact">
+          <div>
+            <h2>Trợ giúp &amp; hỗ trợ</h2>
+            <p>
+              Cần hỗ trợ kỹ thuật hoặc câu hỏi về quy trình? Đội ngũ hỗ trợ luôn
+              sẵn sàng giúp đỡ bạn.
+            </p>
+            <ul class="contact__list">
+              <li>Email hỗ trợ chung: support@company.vn</li>
+              <li>Hotline 24/7: 1900 9999</li>
+              <li>Địa chỉ văn phòng: 123 Nguyễn Trãi, Hà Nội</li>
+            </ul>
+          </div>
+          <form class="contact__form" aria-label="Gửi yêu cầu hỗ trợ">
+            <label for="name">Họ và tên</label>
+            <input id="name" name="name" type="text" placeholder="Nhập họ tên" required />
+
+            <label for="department">Phòng ban</label>
+            <input
+              id="department"
+              name="department"
+              type="text"
+              placeholder="Ví dụ: Nhân sự"
+              required
+            />
+
+            <label for="message">Nội dung yêu cầu</label>
+            <textarea
+              id="message"
+              name="message"
+              rows="4"
+              placeholder="Mô tả vấn đề bạn đang gặp"
+              required
+            ></textarea>
+
+            <button class="btn btn--primary" type="submit">Gửi yêu cầu</button>
+          </form>
+        </div>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <div class="container footer__content">
+        <p>© 2024 Công ty ABC. Dành riêng cho nhân viên nội bộ.</p>
+        <div class="footer__links">
+          <a href="#">Chính sách bảo mật</a>
+          <a href="#">Điều khoản sử dụng</a>
+          <a href="#">Hỏi đáp</a>
+        </div>
+      </div>
+    </footer>
+
+    <script src="assets/js/main.js"></script>
+  </body>
+</html>
